@@ -1,88 +1,102 @@
-# Atlas — Hermes Agent
+# Atlas
 
-Marketing automation harness for **Huh? Learn Spanish** and adjacent ooabi brands.
+Atlas is a reusable marketing agent layer for Hermes Agent. It turns one Hermes instance into a disciplined marketing operator that can learn a brand, follow channel doctrine, compile that doctrine into executable skills, and preserve what it learns in a human-readable vault.
 
-## Status: Running
+The first profile is Huh?, a Spanish-learning app focused on the moment learners know the words but freeze in real conversation. The same structure is scaffolded for PACO, La Seule Plume, and ooabi.
 
-| Component | URL | Status |
-|-----------|-----|--------|
-| Dashboard | http://127.0.0.1:9119 | Live (HTTP 200) |
-| Gateway API | http://127.0.0.1:8642 | Live |
-| Container | hermes-atlas | Up |
+## What Atlas Is
 
-## Quick Commands
+Atlas is not a new agent framework. It is the layer above Hermes that makes the agent useful for real marketing work:
 
-```bash
-# Start
-cd ~/Code/atlas && docker compose up -d
+- A knowledge plane for strategy, brand voice, playbooks, and doctrine.
+- An execution plane that compiles selected vault knowledge into Hermes skills.
+- A memory plane for learning logs, Hermes memory, and future external memory integrations.
 
-# Stop
-cd ~/Code/atlas && docker compose down
-
-# Logs
-cd ~/Code/atlas && docker compose logs -f
-
-# Status
-docker compose ps
+```text
+                 Human review
+                      |
+                      v
++------------------------------------------------+
+|                Atlas vault                     |
+| doctrine | brands | playbooks | learning log   |
++-----------------------+------------------------+
+                        |
+                        | compile/sync
+                        v
++------------------------------------------------+
+|             Hermes execution plane             |
+| /opt/data/skills/huh-channel-strategy/SKILL.md |
++-----------------------+------------------------+
+                        |
+                        | run, observe, learn
+                        v
++------------------------------------------------+
+|               Memory plane                     |
+| Hermes sessions | state db | Atlas learning log|
++------------------------------------------------+
 ```
 
-## What's Installed
+## Why It Matters
 
-- **Image:** `nousresearch/hermes-agent:latest` (v2026.5.7+)
-- **Model:** `claude-sonnet-4-6` via Anthropic native
-- **Data:** `~/Code/atlas/hermes-data/` → container `/opt/data`
-- **Dashboard:** localhost:9119 (bound to 127.0.0.1 host-side — not exposed externally)
-- **Gateway:** localhost:8642 (same security boundary)
+Most marketing bots are prompt piles. Atlas is designed as an inspectable operating system for brand growth:
 
-## Next Steps
+- Strategy is versioned in Markdown.
+- Skills are generated from readable doctrine.
+- Channel rules are explicit, not hidden in chat history.
+- Secrets and local runtime data are excluded from the public repo.
+- Reusable brand profiles let the same agent serve different products without losing discipline.
 
-### 1. Wire Telegram
-1. Create a bot via Telegram @BotFather → get `TELEGRAM_BOT_TOKEN`
-2. Add to `hermes-data/.env`:
-   ```
-   TELEGRAM_BOT_TOKEN=<your_token>
-   TELEGRAM_ALLOWED_USERS=<your_telegram_user_id>
-   ```
-3. Restart: `docker compose restart hermes`
-4. Run setup from inside the container:
-   ```bash
-   docker exec -it hermes-atlas hermes gateway setup
-   ```
+## Current Huh? Doctrine
 
-### 2. Create Skills (Scout / Quill / Buzz / Boost)
-Skills go in `hermes-data/skills/`. Each is a Markdown file with YAML frontmatter.
-See: https://hermes-agent.nousresearch.com/docs/user-guide/features/skills
+Atlas starts with a sober 90-day acquisition plan:
 
-### 3. Verify Model
-```bash
-docker exec -it hermes-atlas hermes model
-```
-Confirm `claude-sonnet-4-6` is selected.
+1. TikTok first.
+2. YouTube Shorts and Instagram Reels as native, watermark-free repurposing paths.
+3. Reddit only as research and careful founder participation.
+4. X ignored as an acquisition engine during the first 90 days.
 
-## Architecture Note
+The creative format is a short faceless screen recording of a real Diego conversation. The hook names the freeze moment immediately, Diego helps with the exact conversation, and the end shows the iOS App Store path clearly.
 
-Hermes is **one agent**, not four. Scout/Quill/Buzz/Boost are **skills** loaded into the same agent — not separate containers. This is intentional: shared memory, shared session history, no inter-agent API overhead, no token duplication.
+## Repository Layout
 
-## Cost Discipline
-
-- Hard cap: $5/day.
-- No background polling loops.
-- Every scheduled automation must have a written cost justification before activation.
-- The OpenClaw incident ($28 in 4 days) does not repeat.
-
-## Files
-
-```
+```text
 atlas/
-├── docker-compose.yml     # Container config
-├── CLAUDE.md              # This project's Claude Code instructions
-├── README.md              # This file
-├── .gitignore             # Excludes hermes-data/, .env, secrets
-├── skills/                # Skill files (Scout, Quill, Buzz, Boost — TBD)
-└── hermes-data/           # Persistent data volume — NOT committed to git
-    ├── .env               # API keys — NOT committed to git
-    ├── config.yaml        # Model config
-    ├── skills/            # Hermes bundled + user skills
-    ├── sessions/          # Conversation history
-    └── memories/          # Agent memory store
+|-- docker-compose.yml
+|-- vault/
+|   |-- 00-doctrine/
+|   |-- 01-brands/
+|   |-- 02-playbooks/
+|   |-- 03-skills-source/
+|   `-- 04-memory/
+|-- skills/
+|   `-- huh-channel-strategy/
+|-- scripts/
+|   |-- backup-atlas.sh
+|   |-- sync-skills.sh
+|   `-- verify-no-secrets.sh
+`-- docs/
+    |-- ARCHITECTURE.md
+    |-- HOW-TO-RUN.md
+    `-- INTERFACES.md
 ```
+
+## Safety Model
+
+Atlas is intended to be public. The repo excludes local Hermes data, `.env` files, private keys, auth profiles, and secret-bearing config. Before every commit, run:
+
+```bash
+scripts/verify-no-secrets.sh
+```
+
+Do not push this repo until the local history and final build report have been reviewed.
+
+## Quick Start
+
+```bash
+cd ~/Code/atlas
+scripts/verify-no-secrets.sh
+scripts/sync-skills.sh
+scripts/backup-atlas.sh
+```
+
+See [docs/HOW-TO-RUN.md](docs/HOW-TO-RUN.md) for the operator workflow.
