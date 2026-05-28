@@ -1,5 +1,30 @@
-hermes-data/
+# Secrets and local config
 .env
+.env.*
 *.env
-*.env.*
+secrets/
+auth-profiles.json
+*-private*
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+
+# Hermes local data volume
+hermes-data/
+
+# Dependencies and build/cache output
+node_modules/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+
+# OS/editor noise
 .DS_Store
+.idea/
+.vscode/
