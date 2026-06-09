@@ -1,6 +1,6 @@
 # Interfaces
 
-Atlas can be operated through three surfaces: terminal, dashboard, and future Telegram.
+Atlas can be operated through three surfaces: terminal, dashboard, and Telegram.
 
 ## Terminal
 
@@ -26,6 +26,16 @@ http://127.0.0.1:9119
 
 Use the dashboard to ask Atlas for marketing drafts, critique hooks, apply Huh? channel doctrine, and inspect whether the loaded skill changes behavior.
 
+For durable Growth R&D intake, paste a source-like message:
+
+```text
+Atlas intake.
+Source: [paste link or text]
+Use atlas-growth-rd.
+```
+
+The Hermes `pre_llm_call` hook saves the source into `vault/05-intake/` first, then injects instructions to analyze that saved file and append the result.
+
 ## Gateway API
 
 Best for programmatic calls from another local tool.
@@ -42,9 +52,10 @@ Use the gateway when Atlas becomes part of a larger workflow, but keep scheduled
 
 Telegram is connected in the local Hermes runtime as of 2026-06-08. The token and runtime config live in ignored `hermes-data/` and must stay out of tracked files.
 
-Use Telegram for quick analysis when Sam is away from the computer:
+Use Telegram for quick durable intake when Sam is away from the computer:
 
 ```text
+Atlas intake.
 Use atlas-growth-rd.
 
 Source: [paste link or text]
@@ -58,7 +69,7 @@ Tell me:
 6. whether this should become an Atlas intake file
 ```
 
-Important: Telegram analysis does not automatically write to the Atlas git vault. To save durable memory, copy the source/analysis into `vault/05-intake/` later or use `scripts/intake-source.sh` on the Mac.
+Important: Telegram source-like turns now write to the Atlas vault through the intake bridge. Random chat does not. If Sam sends only a vague instruction with no source/link/long text, nothing is filed.
 
 When maintaining Telegram:
 
@@ -72,4 +83,4 @@ When maintaining Telegram:
 - Use terminal when correctness matters.
 - Use dashboard when shaping agent behavior.
 - Use gateway when another local system needs Atlas.
-- Use Telegram for quick capture/triage, then file durable decisions into the vault.
+- Use Telegram for quick capture/triage; source-like turns are saved into the vault automatically.

@@ -80,17 +80,19 @@ No "save to validated" unless evidence is A or strong B.
 
 No "run experiment" unless there is a clear success metric and time/cost box.
 
-## Telegram Boundary
+## Telegram / Dashboard Intake Boundary
 
-Telegram can trigger analysis and return recommendations.
+Telegram and dashboard can trigger analysis and return recommendations.
 
-Telegram does not automatically commit to the Atlas vault unless a separate approved file bridge exists.
+Source-like turns are saved by the Atlas durable intake bridge before analysis when they contain a URL, `Source:`, `atlas intake`, `Use atlas-growth-rd`, `analyze this`, `dissect this`, `research:`, or long pasted text.
 
-If Sam sends research by Telegram, analyze it and recommend whether to save. Tell Sam the exact local command to save it later:
+If Sam sends a source-like research item by Telegram/dashboard, analyze the saved intake file and append your final analysis under `## Atlas Analysis`.
+
+For local file drops, tell Sam the exact on-demand command:
 
 ```bash
 cd ~/Code/atlas
-scripts/intake-source.sh "Source title" "https://source-url-if-any"
+scripts/process-intake-drop.sh /path/to/file "Source title" "https://source-url-if-any"
 ```
 
 ## Output Format
@@ -133,4 +135,3 @@ Stop and ask Sam before:
 - spending money,
 - pushing public content,
 - sending outbound messages.
-

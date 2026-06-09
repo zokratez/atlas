@@ -18,6 +18,7 @@ Atlas already has:
 - Growth R&D skill synced into Hermes: `atlas-growth-rd`.
 - Loop operator skill synced into Hermes: `atlas-loop-operator`.
 - Existing monthly cron example: Huh? benchmark refresh.
+- Durable intake bridge: dashboard and Telegram source-like messages are saved into `vault/05-intake/` before analysis.
 
 ## Important Constraint
 
@@ -25,15 +26,17 @@ The Hermes container currently mounts:
 
 ```text
 ./hermes-data -> /opt/data
+./vault       -> /opt/atlas/vault
+./scripts     -> /opt/atlas/scripts (read-only)
 ```
 
-It does **not** mount the Atlas repo vault. That means:
+That means:
 
-- Dashboard/Telegram can analyze and reply.
-- Local terminal can save files into `vault/`.
-- Durable vault filing from Telegram requires either manual copy-back or a future approved bridge/mount.
+- Dashboard/Telegram can save source-like intake messages into `vault/05-intake/`.
+- Hermes can read and write the saved intake file during the same analysis turn.
+- Local terminal can normalize dropped files into the same intake format.
 
-Do not pretend Telegram analysis is automatically committed to the Atlas vault until that bridge exists.
+Do not pretend random chat is automatically filed. The hook only files source-like turns: messages with URLs, `Source:`, `atlas intake`, `Use atlas-growth-rd`, `analyze this`, `dissect this`, `research:`, or long pasted text.
 
 ## Where To Dump Research
 
@@ -63,14 +66,29 @@ cd ~/Code/atlas
 cat /path/to/source.txt | scripts/intake-source.sh "Source title" "https://source-url-if-any"
 ```
 
+Fast path from any dropped file:
+
+```bash
+cd ~/Code/atlas
+scripts/process-intake-drop.sh /path/to/file "Source title" "https://source-url-if-any"
+```
+
+The file processor is on-demand. It does not start a watcher, scraper, cron, or extra paid model call.
+
 ## Dashboard Workflow
 
 1. Open `http://127.0.0.1:9119`.
-2. Paste:
+2. Paste a source-like message:
 
 ```text
-Use atlas-growth-rd to analyze vault/05-intake/<filename>. Give me the verdict, evidence grade, proof gaps, product fit, cheapest useful test, success metric, and filing recommendation.
+Atlas intake.
+
+Source: [paste link or text]
+
+Use atlas-growth-rd.
 ```
+
+The intake bridge saves the source first, then injects instructions for Hermes to analyze the saved file and append the result under `## Atlas Analysis`.
 
 3. Move the result to one of:
 
@@ -94,6 +112,8 @@ Use Telegram when you are away from the computer.
 Send Hermes a message like:
 
 ```text
+Atlas intake.
+
 Use atlas-growth-rd.
 
 Source: [paste link or text]
@@ -107,14 +127,7 @@ Tell me:
 6. whether this should become an Atlas intake file
 ```
 
-If Hermes says it is worth saving, later on the Mac:
-
-```bash
-cd ~/Code/atlas
-scripts/intake-source.sh "Source title" "https://source-url-if-any"
-```
-
-Then paste the Telegram analysis into the intake file under `## Atlas Analysis`.
+The bridge saves the source into `vault/05-intake/` before analysis. It also asks Hermes to append the analysis into that file. If the source is an image/PDF and local OCR/PDF extraction is unavailable, Hermes should say what is missing instead of inventing the contents.
 
 ## Loop Workflow
 
@@ -171,6 +184,8 @@ Current approved level: **Level 0 / Level 1 only**.
 
 Do not install new cron jobs or external scrapers until Sam approves.
 
+The intake bridge is not a scraper. It only fetches an explicit URL Sam pasted and only uses local parsing/OCR tools if present. No new paid APIs are allowed without Sam approving the cost first.
+
 ## Verification
 
 Before committing Atlas changes:
@@ -190,4 +205,3 @@ git status --short
 - Context rot: Telegram answer not copied into vault.
 - False proof: viral source accepted without denominator.
 - Legal/platform risk: scraping started without approval.
-

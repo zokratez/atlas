@@ -8,5 +8,5 @@ Items that require a human decision, a secret, or account-owner action.
   Suggested daily cron, only after approval:
   `17 3 * * * /Users/samoteo/Code/atlas/scripts/backup-atlas.sh >> /Users/samoteo/.atlas-backups/backup.log 2>&1`
 - Telegram is connected in local Hermes runtime. Keep token/runtime config in ignored `hermes-data/`; never commit it.
-- Decide whether to build a Telegram -> Atlas-vault bridge. Current state: Telegram can analyze and reply, but durable filing into `vault/05-intake/` is manual from the Mac.
+- Telegram -> Atlas-vault bridge is installed locally. Source-like Telegram/dashboard turns are saved into `vault/05-intake/` before analysis through the Hermes `pre_llm_call` hook.
 - Add free-tier model/API keys to the fallback chain only through local secret storage, never tracked files.

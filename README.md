@@ -112,9 +112,10 @@ See [docs/LOOP-OPERATING-MANUAL.md](docs/LOOP-OPERATING-MANUAL.md) for the contr
 
 ## Growth R&D Quick Use
 
-1. Drop a source into `vault/05-intake/`.
-2. Open Hermes dashboard at `http://127.0.0.1:9119`.
-3. Ask: `Use atlas-growth-rd to analyze vault/05-intake/<file>.`
+1. Paste a source-like message into Hermes dashboard or Telegram:
+   `Atlas intake. Source: <link or text>. Use atlas-growth-rd.`
+2. Atlas saves it into `vault/05-intake/` before analysis.
+3. Hermes analyzes the saved file and should append the result under `## Atlas Analysis`.
 4. File the result into opportunities, experiments, validated patterns, or swipe file.
 
 Fast clipboard capture:
@@ -122,4 +123,10 @@ Fast clipboard capture:
 ```bash
 cd ~/Code/atlas
 scripts/intake-source.sh "Source title" "https://source-url-if-any"
+```
+
+For dropped files:
+
+```bash
+scripts/process-intake-drop.sh /path/to/file "Source title" "https://source-url-if-any"
 ```
