@@ -59,6 +59,22 @@ The backup includes skills, sessions, and Hermes state database files. It intent
 7. Record validated learning in `vault/04-memory/learning-log.md`.
 8. Commit one coherent change.
 
+## Growth R&D Loop
+
+Use this when Sam finds an article, video, thread, customer quote, content idea, competitor move, ad, or tactic.
+
+1. Save the source in `vault/05-intake/`.
+2. In Hermes dashboard, ask: `Use atlas-growth-rd to analyze vault/05-intake/<file>.`
+3. Require an evidence grade, proof gaps, product fit, cheapest test, and next action.
+4. Move the result to:
+   - `vault/06-opportunities/`
+   - `vault/07-validated/`
+   - `vault/08-experiments/`
+   - `vault/09-swipe-file/`
+5. If the lesson proves out, add it to `vault/04-memory/learning-log.md`.
+
+Atlas may analyze and recommend. It may not run autonomous scraping, spend money, post content, or schedule loops without Sam's explicit approval.
+
 ## Human-Only Setup
 
 Sam must handle anything requiring a token, account owner action, or persistent scheduler approval. Those items live in `SETUP_TODO_FOR_SAM.md`.

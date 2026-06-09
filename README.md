@@ -4,6 +4,8 @@ Atlas is a reusable marketing agent layer for Hermes Agent. It turns one Hermes 
 
 The first profile is Huh?, a Spanish-learning app focused on the moment learners know the words but freeze in real conversation. The same structure is scaffolded for PACO, La Seule Plume, and ooabi.
 
+Atlas also includes a cross-product Growth R&D layer. This is where Sam can dump articles, competitor examples, customer language, content ideas, clips, hooks, and tactics for proof-checking before they become experiments.
+
 ## What Atlas Is
 
 Atlas is not a new agent framework. It is the layer above Hermes that makes the agent useful for real marketing work:
@@ -67,8 +69,14 @@ atlas/
 |   |-- 01-brands/
 |   |-- 02-playbooks/
 |   |-- 03-skills-source/
-|   `-- 04-memory/
+|   |-- 04-memory/
+|   |-- 05-intake/
+|   |-- 06-opportunities/
+|   |-- 07-validated/
+|   |-- 08-experiments/
+|   `-- 09-swipe-file/
 |-- skills/
+|   |-- atlas-growth-rd/
 |   `-- huh-channel-strategy/
 |-- scripts/
 |   |-- backup-atlas.sh
@@ -100,3 +108,10 @@ scripts/backup-atlas.sh
 ```
 
 See [docs/HOW-TO-RUN.md](docs/HOW-TO-RUN.md) for the operator workflow.
+
+## Growth R&D Quick Use
+
+1. Drop a source into `vault/05-intake/`.
+2. Open Hermes dashboard at `http://127.0.0.1:9119`.
+3. Ask: `Use atlas-growth-rd to analyze vault/05-intake/<file>.`
+4. File the result into opportunities, experiments, validated patterns, or swipe file.

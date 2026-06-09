@@ -12,7 +12,12 @@ vault/
 |-- 01-brands/         # brand-specific voice, channels, cadence, constraints
 |-- 02-playbooks/      # repeatable channel workflows
 |-- 03-skills-source/  # source markdown that compiles into Hermes skills
-`-- 04-memory/         # human-readable learning log
+|-- 04-memory/         # human-readable learning log
+|-- 05-intake/         # raw marketing sources Sam dumps
+|-- 06-opportunities/  # proof-checked ideas worth considering
+|-- 07-validated/      # patterns with direct or strong external proof
+|-- 08-experiments/    # tests ready to run or already running
+`-- 09-swipe-file/     # creative examples and patterns
 ```
 
 The vault is the source of truth. If a channel rule changes, it should change here first.
@@ -32,6 +37,14 @@ hermes-atlas:/opt/data/skills/huh-channel-strategy/SKILL.md
 ```
 
 `packages` or framework code are not required for the current layer. The runtime is Docker plus Hermes.
+
+The cross-product R&D execution skill is:
+
+```text
+skills/atlas-growth-rd/SKILL.md
+```
+
+It proof-checks dumped sources, assigns evidence grades, maps ideas to products, and turns plausible patterns into experiments.
 
 ## Memory Plane
 
