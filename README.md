@@ -108,6 +108,7 @@ scripts/backup-atlas.sh
 ```
 
 See [docs/HOW-TO-RUN.md](docs/HOW-TO-RUN.md) for the operator workflow.
+See [docs/LOOP-OPERATING-MANUAL.md](docs/LOOP-OPERATING-MANUAL.md) for the controlled loop and Telegram intake workflow.
 
 ## Growth R&D Quick Use
 
@@ -115,3 +116,10 @@ See [docs/HOW-TO-RUN.md](docs/HOW-TO-RUN.md) for the operator workflow.
 2. Open Hermes dashboard at `http://127.0.0.1:9119`.
 3. Ask: `Use atlas-growth-rd to analyze vault/05-intake/<file>.`
 4. File the result into opportunities, experiments, validated patterns, or swipe file.
+
+Fast clipboard capture:
+
+```bash
+cd ~/Code/atlas
+scripts/intake-source.sh "Source title" "https://source-url-if-any"
+```

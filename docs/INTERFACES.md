@@ -40,9 +40,27 @@ Use the gateway when Atlas becomes part of a larger workflow, but keep scheduled
 
 ## Telegram
 
-Telegram is not wired by default because it requires a BotFather token and user allowlist. Those are secrets and must stay out of tracked files.
+Telegram is connected in the local Hermes runtime as of 2026-06-08. The token and runtime config live in ignored `hermes-data/` and must stay out of tracked files.
 
-When Sam approves Telegram:
+Use Telegram for quick analysis when Sam is away from the computer:
+
+```text
+Use atlas-growth-rd.
+
+Source: [paste link or text]
+
+Tell me:
+1. verdict
+2. evidence grade
+3. proof gaps
+4. product fit
+5. cheapest useful test
+6. whether this should become an Atlas intake file
+```
+
+Important: Telegram analysis does not automatically write to the Atlas git vault. To save durable memory, copy the source/analysis into `vault/05-intake/` later or use `scripts/intake-source.sh` on the Mac.
+
+When maintaining Telegram:
 
 1. Create the bot token outside this repo.
 2. Store it in local Hermes secret config, not git.
@@ -54,4 +72,4 @@ When Sam approves Telegram:
 - Use terminal when correctness matters.
 - Use dashboard when shaping agent behavior.
 - Use gateway when another local system needs Atlas.
-- Use Telegram only after the security and cost boundaries are explicit.
+- Use Telegram for quick capture/triage, then file durable decisions into the vault.

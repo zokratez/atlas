@@ -63,7 +63,7 @@ The backup includes skills, sessions, and Hermes state database files. It intent
 
 Use this when Sam finds an article, video, thread, customer quote, content idea, competitor move, ad, or tactic.
 
-1. Save the source in `vault/05-intake/`.
+1. Save the source in `vault/05-intake/` or run `scripts/intake-source.sh "Source title" "https://source-url-if-any"` to capture clipboard/stdin.
 2. In Hermes dashboard, ask: `Use atlas-growth-rd to analyze vault/05-intake/<file>.`
 3. Require an evidence grade, proof gaps, product fit, cheapest test, and next action.
 4. Move the result to:
@@ -74,6 +74,8 @@ Use this when Sam finds an article, video, thread, customer quote, content idea,
 5. If the lesson proves out, add it to `vault/04-memory/learning-log.md`.
 
 Atlas may analyze and recommend. It may not run autonomous scraping, spend money, post content, or schedule loops without Sam's explicit approval.
+
+For the full controlled loop and Telegram workflow, read `docs/LOOP-OPERATING-MANUAL.md`.
 
 ## Human-Only Setup
 
