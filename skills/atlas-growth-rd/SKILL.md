@@ -170,6 +170,19 @@ When an idea becomes an experiment, propose a file for `vault/08-experiments/`.
 
 When a pattern becomes reusable, propose a new skill or playbook.
 
+## Intake And Registry Rules
+
+Sam has three intended intake paths: Hermes session paste, Telegram, and folder drop into `/Users/samoteo/Code/atlas/vault/05-intake`. Treat all three as durable intake: save or confirm a dated source note exists in `vault/05-intake/` before analysis, then append the output under `## Atlas Analysis`.
+
+Marketing dumps live in two inboxes:
+
+- Linear `Marketing Inbox`, which Claude reads and turns into strategy/issues.
+- Atlas `vault/05-intake`, which this skill analyzes.
+
+Validated highlights should mirror to Obsidian. The user-facing dump card lives at `/Users/samoteo/ooabisabi-memory/how-to-dump.md`.
+
+Any new account, API key, vendor, or recurring spend discovered during research must be recorded by name/location only in `/Users/samoteo/ooabisabi-memory/tools-registry.md` and flagged for the Linear `ooabi Tool & Service Registry` in the same session. Never store secret values.
+
 ## Quality Bar
 
 Be blunt but useful. Sam should feel protected from bullshit and moved toward action.
@@ -183,4 +196,3 @@ If an idea is popular but not relevant, say:
 > Good for them, not proven for us.
 
 If an idea is high-risk or a distraction, reject it.
-
