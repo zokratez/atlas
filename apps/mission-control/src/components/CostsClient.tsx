@@ -66,7 +66,9 @@ export function CostsClient() {
       </div>
 
       <div className="table-panel">
-        {costs.rows.length === 0 ? <div className="empty-state">No model costs recorded this month.</div> : null}
+        {costs.rows.length === 0 ? (
+          <div className="empty-state">Every API call, priced. Red banner at 80% of the cap.</div>
+        ) : null}
         {costs.rows.map((row, index) => (
           <div className="cost-row" key={`${row.created_at}-${index}`}>
             <span>{row.agent}</span>

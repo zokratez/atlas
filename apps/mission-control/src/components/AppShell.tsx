@@ -10,7 +10,7 @@ type NavKey = "feed" | "queue" | "experiments" | "costs";
 const navItems: Array<{ key: NavKey; href: string; label: string; Icon: typeof Rss }> = [
   { key: "feed", href: "/feed", label: "Feed", Icon: Rss },
   { key: "queue", href: "/queue", label: "Queue", Icon: ListChecks },
-  { key: "experiments", href: "/experiments", label: "Experiments", Icon: ChartNoAxesCombined },
+  { key: "experiments", href: "/experiments", label: "Tests", Icon: ChartNoAxesCombined },
   { key: "costs", href: "/costs", label: "Costs", Icon: CircleDollarSign },
 ];
 
@@ -76,12 +76,14 @@ export function AppShell({
             onClick={toggleEngine}
             disabled={loadingFlag}
             aria-pressed={enabled}
-            title="Toggle atlas.flags.engine_enabled"
           >
             <Power size={16} />
-            <span>{enabled ? "Engine on" : "Engine off"}</span>
+            <span className="kill-switch-copy">
+              <span>{enabled ? "Engine on" : "Engine off"}</span>
+              <span>Off = no agent runs or spends.</span>
+            </span>
           </button>
-          <button className="ghost-button" type="button" onClick={signOut} title={userEmail}>
+          <button className="ghost-button" type="button" onClick={signOut} aria-label={`Sign out ${userEmail}`}>
             Sign out
           </button>
         </div>

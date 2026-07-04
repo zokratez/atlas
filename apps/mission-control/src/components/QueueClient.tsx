@@ -70,7 +70,11 @@ export function QueueClient() {
 
       <div className="stack">
         {loading ? <div className="panel skeleton" /> : null}
-        {!loading && actions.length === 0 ? <div className="empty-state">No pending actions.</div> : null}
+        {!loading && actions.length === 0 ? (
+          <div className="empty-state">
+            Drafts wait here. Approve or Kill — every tap teaches Atlas your taste.
+          </div>
+        ) : null}
         {actions.map((action) => (
           <article className="panel action-panel" key={action.id}>
             <div className="panel-meta">

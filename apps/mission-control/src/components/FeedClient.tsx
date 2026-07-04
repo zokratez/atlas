@@ -17,13 +17,21 @@ type Finding = {
 export function FeedClient() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
+    setShowWelcome(window.localStorage.getItem("atlas-welcome-dismissed") !== "true");
+
     fetch("/api/feed")
       .then((response) => response.json())
       .then((payload) => setFindings(payload.findings ?? []))
       .finally(() => setLoading(false));
   }, []);
+
+  function dismissWelcome() {
+    window.localStorage.setItem("atlas-welcome-dismissed", "true");
+    setShowWelcome(false);
+  }
 
   return (
     <section className="view">
@@ -35,9 +43,22 @@ export function FeedClient() {
         <span className="counter">{loading ? "--" : findings.length}</span>
       </div>
 
+      {showWelcome ? (
+        <article className="panel welcome-card">
+          <div>
+            <h3>Welcome to Atlas.</h3>
+            <p>Read what Scout found.</p>
+            <p>Approve what feels right.</p>
+          </div>
+          <button type="button" className="secondary" onClick={dismissWelcome}>
+            Dismiss
+          </button>
+        </article>
+      ) : null}
+
       <div className="stack">
         {loading ? <PanelSkeleton /> : null}
-        {!loading && findings.length === 0 ? <EmptyState text="No findings yet." /> : null}
+        {!loading && findings.length === 0 ? <EmptyState text="Scout's nightly research lands here." /> : null}
         {findings.map((finding) => (
           <article className="panel" key={finding.id}>
             <div className="panel-meta">

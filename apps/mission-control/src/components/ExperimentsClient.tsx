@@ -53,7 +53,9 @@ export function ExperimentsClient() {
 
       <div className="stack">
         {loading ? <div className="panel skeleton" /> : null}
-        {!loading && experiments.length === 0 ? <div className="empty-state">No experiments yet.</div> : null}
+        {!loading && experiments.length === 0 ? (
+          <div className="empty-state">Every bet gets a verdict: keep, kill, or blemish.</div>
+        ) : null}
         {experiments.map((experiment) => (
           <article className="panel" key={experiment.id}>
             <div className="panel-meta">

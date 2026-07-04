@@ -123,6 +123,26 @@ a {
   white-space: nowrap;
 }
 
+.kill-switch {
+  min-height: 48px;
+}
+
+.kill-switch-copy {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.kill-switch-copy span:first-child {
+  font-size: 12px;
+}
+
+.kill-switch-copy span:last-child {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
 .kill-switch.off {
   border-color: rgba(255, 107, 107, 0.45);
   background: rgba(255, 107, 107, 0.1);
@@ -154,14 +174,15 @@ a {
 
 .nav-tabs a {
   display: flex;
-  min-height: 42px;
+  min-height: 54px;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -232,6 +253,21 @@ a {
   margin: 0;
   font-size: 13px;
   line-height: 1.55;
+}
+
+.welcome-card {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.welcome-card h3 {
+  margin: 0 0 8px;
+}
+
+.welcome-card button {
+  min-height: 34px;
+  border-color: rgba(239, 200, 106, 0.42);
+  background: rgba(239, 200, 106, 0.1);
 }
 
 .panel-meta,
@@ -491,11 +527,20 @@ a {
 }
 
 @media (max-width: 430px) {
-  .nav-tabs a span {
-    display: none;
+  .metric-grid {
+    grid-template-columns: 1fr;
   }
 
-  .metric-grid {
+  .topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .topbar-actions {
+    align-items: stretch;
+  }
+
+  .welcome-card {
     grid-template-columns: 1fr;
   }
 }
