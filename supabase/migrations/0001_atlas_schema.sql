@@ -88,3 +88,9 @@ alter table atlas.costs enable row level security;
 alter table atlas.decisions enable row level security;
 alter table atlas.flags enable row level security;
 -- No policies created: service_role only. Anon/authenticated get nothing.
+
+grant usage on schema atlas to service_role;
+grant all privileges on all tables in schema atlas to service_role;
+grant all privileges on all sequences in schema atlas to service_role;
+alter default privileges in schema atlas grant all privileges on tables to service_role;
+alter default privileges in schema atlas grant all privileges on sequences to service_role;

@@ -1,0 +1,21 @@
+[api]
+schemas = ["public", "storage", "graphql_public", "atlas"]
+
+[auth]
+site_url = "https://www.pacopeptide.com"
+additional_redirect_urls = [
+  "https://via-mauve.vercel.app/**",
+  "https://via-mauve.vercel.app/auth/callback",
+  "http://localhost:3000/**",
+  "http://localhost:3000/auth/callback",
+  "https://www.pacopeptide.com/auth/callback",
+  "https://*.vercel.app/auth/callback",
+]
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.email]
+max_frequency = "1m0s"
+otp_length = 8
