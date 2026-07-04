@@ -30,6 +30,7 @@ Rules:
 - Return a JSON array only.
 - Max 3 findings for this target.
 - Each object must include: property, claim, evidence, source_url, confidence, tags.
+- property must exactly equal "${(input as { target?: { property?: string } }).target?.property ?? "general"}".
 - confidence must be 0-1.
 - Prefer specific claims tied to source evidence.
 - Reject fluff.
@@ -82,7 +83,7 @@ export async function main() {
       .filter((finding) => finding.claim && finding.evidence && finding.source_url)
       .map((finding) => ({
         ...finding,
-        property: finding.property || target.property,
+        property: target.property,
         tags: Array.from(new Set([...(target.tags ?? []), ...(finding.tags ?? []), "scout"])),
         confidence: Math.max(0, Math.min(1, Number(finding.confidence ?? 0.5))),
       }));

@@ -1,5 +1,5 @@
 provider: anthropic
-model: claude-3-5-haiku-latest
+model: claude-haiku-4-5
 max_findings_per_night: 20
 estimated_usd_per_million_input_tokens: 0.80
 estimated_usd_per_million_output_tokens: 4.00

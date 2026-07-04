@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const workersRoot = path.resolve(__dirname, "../..");
 
-dotenv.config({ path: path.join(workersRoot, ".env") });
+dotenv.config({ path: path.join(workersRoot, ".env"), override: true });
 
 export function getWorkersRoot() {
   return workersRoot;
