@@ -18,7 +18,8 @@ export async function listPendingActions() {
   const { data, error } = await atlasDb()
     .from("actions")
     .select("*")
-    .eq("status", "pending")
+    .in("status", ["pending", "approved"])
+    .eq("compliance_status", "passed")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -47,6 +48,15 @@ export async function decideAction(
     .eq("id", actionId);
 
   if (actionError) throw actionError;
+}
+
+export async function markActionPublished(actionId: string) {
+  const { error } = await atlasDb()
+    .from("actions")
+    .update({ status: "published", decided_at: new Date().toISOString() })
+    .eq("id", actionId);
+
+  if (error) throw error;
 }
 
 export async function listExperiments() {

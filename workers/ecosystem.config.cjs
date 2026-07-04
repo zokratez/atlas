@@ -21,6 +21,17 @@ module.exports = {
       env: {
         NODE_ENV: "production"
       }
+    },
+    {
+      name: "atlas-quill",
+      cwd: __dirname,
+      script: "dist/workers/quill.js",
+      interpreter: "node",
+      cron_restart: "30 2 * * *",
+      autorestart: false,
+      env: {
+        NODE_ENV: "production"
+      }
     }
   ]
 };

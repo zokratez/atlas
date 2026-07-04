@@ -12,6 +12,12 @@ jobs:
     provider: anthropic
     model: claude-haiku-4-5
     max_findings_per_run: 5
+  quill:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    max_findings_per_run: 5
+    estimated_usd_per_million_input_tokens: 3.00
+    estimated_usd_per_million_output_tokens: 15.00
   scout-pulse:
     provider: xai
     model: grok-4.3

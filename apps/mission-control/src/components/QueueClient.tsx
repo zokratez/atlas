@@ -58,6 +58,18 @@ export function QueueClient() {
     setBusyId(null);
   }
 
+  async function markPublished(action: Action) {
+    setBusyId(action.id);
+    const response = await fetch(`/api/actions/${action.id}/publish`, {
+      method: "POST",
+    });
+
+    if (response.ok) {
+      await load();
+    }
+    setBusyId(null);
+  }
+
   return (
     <section className="view">
       <div className="view-heading">
@@ -81,9 +93,15 @@ export function QueueClient() {
               <span>{action.property}</span>
               <span>{action.kind}</span>
               <span>{action.channel ?? "no-channel"}</span>
+              <span>{action.status}</span>
             </div>
             <h3>{String(action.payload.title ?? action.payload.hook ?? "Untitled action")}</h3>
             <p>{String(action.payload.body ?? action.payload.caption ?? "No body provided.")}</p>
+            {isPatternScore(action.payload.pattern_score) ? (
+              <p className="note">
+                {action.payload.pattern_score.label} — {action.payload.pattern_score.caveat}
+              </p>
+            ) : null}
             <div className="tag-row">
               <span className={`chip ${action.compliance_status}`}>
                 compliance {action.compliance_status}
@@ -92,17 +110,25 @@ export function QueueClient() {
             </div>
             {action.compliance_notes ? <p className="note">{action.compliance_notes}</p> : null}
             <div className="button-row">
-              <button type="button" onClick={() => decide(action, "approve")} disabled={busyId === action.id}>
-                Approve
-              </button>
-              <button
-                className="secondary"
-                type="button"
-                onClick={() => decide(action, "edit")}
-                disabled={busyId === action.id}
-              >
-                Edit
-              </button>
+              {action.status === "approved" ? (
+                <button type="button" onClick={() => markPublished(action)} disabled={busyId === action.id}>
+                  Mark published
+                </button>
+              ) : (
+                <button type="button" onClick={() => decide(action, "approve")} disabled={busyId === action.id}>
+                  Approve
+                </button>
+              )}
+              {action.status === "pending" ? (
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => decide(action, "edit")}
+                  disabled={busyId === action.id}
+                >
+                  Edit
+                </button>
+              ) : null}
               <button
                 className="danger"
                 type="button"
@@ -116,5 +142,16 @@ export function QueueClient() {
         ))}
       </div>
     </section>
+  );
+}
+
+function isPatternScore(value: unknown): value is { label: string; caveat: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "label" in value &&
+    "caveat" in value &&
+    typeof (value as { label?: unknown }).label === "string" &&
+    typeof (value as { caveat?: unknown }).caveat === "string"
   );
 }
