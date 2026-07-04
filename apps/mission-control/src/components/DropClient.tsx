@@ -4,22 +4,117 @@ import { useRef, useState } from "react";
 
 type SubmitState = "idle" | "submitting" | "sent" | "error";
 
+type UploadResult = {
+  ok: boolean;
+  error: string;
+};
+
 export function DropClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const [content, setContent] = useState("");
   const [property, setProperty] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
+  const [progress, setProgress] = useState("");
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState("submitting");
     setMessage("");
+    setProgress("");
 
+    const queue = files.slice(0, 10);
+
+    if (queue.length > 0) {
+      for (let index = 0; index < queue.length; index += 1) {
+        setProgress(`${index + 1} of ${queue.length}...`);
+        const result = await uploadDrop({ file: queue[index], property });
+
+        if (!result.ok) {
+          setState("error");
+          setProgress("");
+          setMessage(result.error);
+          return;
+        }
+      }
+    } else {
+      const result = await uploadDrop({ content, property });
+
+      if (!result.ok) {
+        setState("error");
+        setMessage(result.error);
+        return;
+      }
+    }
+
+    setState("sent");
+    setProgress("");
+    setMessage(queue.length > 1 ? `Dropped ${queue.length} files. Scout will dissect them tonight.` : "Dropped. Scout will dissect it tonight.");
+    setContent("");
+    setProperty("");
+    setFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+  }
+
+  async function chooseFiles(fileList: FileList | null) {
+    setMessage("");
+    setProgress("");
+    setState("idle");
+
+    const selected = Array.from(fileList ?? []);
+    if (selected.length === 0) {
+      setFiles([]);
+      return;
+    }
+
+    if (selected.some((file) => file.type.startsWith("video/") || /\.(mov|mp4|m4v|webm|avi)$/i.test(file.name))) {
+      setFiles([]);
+      setState("error");
+      setMessage("paste the link instead — Atlas reads transcripts.");
+      return;
+    }
+
+    const capped = selected.slice(0, 10);
+    const normalized: File[] = [];
+
+    for (const selectedFile of capped) {
+      if (selectedFile.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif)$/i.test(selectedFile.name)) {
+        try {
+          normalized.push(await normalizeImage(selectedFile));
+          continue;
+        } catch {
+          setFiles([]);
+          setState("error");
+          setMessage("That photo could not be normalized. Try a screenshot or JPEG.");
+          return;
+        }
+      }
+
+      normalized.push(selectedFile);
+    }
+
+    setFiles(normalized);
+
+    if (selected.length > 10) {
+      setState("error");
+      setMessage("Atlas can take 10 files per submit. I queued the first 10.");
+    }
+  }
+
+  async function uploadDrop({
+    content,
+    file,
+    property,
+  }: {
+    content?: string;
+    file?: File;
+    property: string;
+  }): Promise<UploadResult> {
     const formData = new FormData();
-    formData.set("content", content);
+    formData.set("content", content ?? "");
     formData.set("property", property);
     if (file) formData.set("file", file);
 
@@ -28,52 +123,18 @@ export function DropClient() {
       body: formData,
     });
 
-    const payload = await response.json().catch(() => ({}));
-
     if (!response.ok) {
-      setState("error");
-      setMessage(String(payload.error ?? "Drop failed."));
-      return;
+      const payload = await response.json().catch(() => ({}));
+      return { ok: false, error: String(payload.error ?? "Drop failed.") };
     }
 
-    setState("sent");
-    setMessage("Dropped. Scout will dissect it tonight.");
-    setContent("");
-    setProperty("");
-    setFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (cameraInputRef.current) cameraInputRef.current.value = "";
+    return { ok: true, error: "" };
   }
 
-  async function chooseFile(nextFile: File | undefined) {
-    setMessage("");
-    setState("idle");
-
-    if (!nextFile) {
-      setFile(null);
-      return;
-    }
-
-    if (nextFile.type.startsWith("video/") || /\.(mov|mp4|m4v|webm|avi)$/i.test(nextFile.name)) {
-      setFile(null);
-      setState("error");
-      setMessage("paste the link instead — Atlas reads transcripts.");
-      return;
-    }
-
-    if (nextFile.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif)$/i.test(nextFile.name)) {
-      try {
-        setFile(await normalizeImage(nextFile));
-        return;
-      } catch {
-        setFile(null);
-        setState("error");
-        setMessage("That photo could not be normalized. Try a screenshot or JPEG.");
-        return;
-      }
-    }
-
-    setFile(nextFile);
+  function readyLabel() {
+    if (files.length === 0) return null;
+    if (files.length === 1) return `Ready: ${files[0].name}`;
+    return `Ready: ${files.length} files`;
   }
 
   return (
@@ -109,8 +170,9 @@ export function DropClient() {
           id="drop-file"
           ref={fileInputRef}
           type="file"
+          multiple
           accept=".txt,.md,.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,text/plain,text/markdown,application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
-          onChange={(event) => chooseFile(event.target.files?.[0])}
+          onChange={(event) => chooseFiles(event.target.files)}
         />
 
         <label htmlFor="drop-camera">Camera</label>
@@ -120,12 +182,13 @@ export function DropClient() {
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={(event) => chooseFile(event.target.files?.[0])}
+          onChange={(event) => chooseFiles(event.target.files)}
         />
 
-        {file ? <p className="form-message sent">Ready: {file.name}</p> : null}
+        {readyLabel() ? <p className="form-message sent">{readyLabel()}</p> : null}
+        {progress ? <p className="form-message sent">{progress}</p> : null}
 
-        <button type="submit" disabled={state === "submitting" || (!content.trim() && !file)}>
+        <button type="submit" disabled={state === "submitting" || (!content.trim() && files.length === 0)}>
           {state === "submitting" ? "Submitting" : "Submit"}
         </button>
 
