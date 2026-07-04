@@ -1,0 +1,42 @@
+provider: anthropic
+model: claude-3-5-haiku-latest
+max_findings_per_night: 20
+estimated_usd_per_million_input_tokens: 0.80
+estimated_usd_per_million_output_tokens: 4.00
+properties:
+  - huh
+  - paco
+  - general
+research_targets:
+  - name: peptide-adjacent DTC brands
+    property: general
+    tags: [paco, peptide-adjacent, dtc, positioning]
+    urls:
+      - https://www.hims.com/
+      - https://www.ro.co/
+      - https://www.functionhealth.com/
+      - https://www.levels.com/
+    questions:
+      - What acquisition hooks, trust devices, and conversion claims are visible?
+      - What can PACO borrow without making medical claims?
+  - name: language-app marketing
+    property: huh
+    tags: [huh, language-learning, app-marketing, spanish]
+    urls:
+      - https://www.duolingo.com/
+      - https://www.babbel.com/
+      - https://www.speak.com/
+      - https://www.languagereactor.com/
+    questions:
+      - What promise is used for real conversation confidence?
+      - What proof, demo, or social loop is emphasized?
+  - name: channel tactics
+    property: general
+    tags: [channel-tactics, short-form, acquisition]
+    urls:
+      - https://www.tiktok.com/business/en-US/blog
+      - https://creators.youtube.com/
+      - https://www.redditforbusiness.com/business
+    questions:
+      - What tactical pattern can be tested cheaply in the next seven days?
+      - Which channel mechanics map to Huh or PACO?

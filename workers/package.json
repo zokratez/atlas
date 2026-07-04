@@ -1,0 +1,22 @@
+{
+  "name": "atlas-workers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "scout": "node dist/workers/scout.js",
+    "lens": "node dist/workers/lens.js",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.60.0",
+    "@supabase/supabase-js": "^2.52.0",
+    "dotenv": "^17.2.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.9",
+    "typescript": "^5.8.3"
+  }
+}
