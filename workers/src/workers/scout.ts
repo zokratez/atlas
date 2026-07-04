@@ -2,6 +2,7 @@ import { jobConfig, loadConfig } from "../lib/config.js";
 import { atlasDb } from "../lib/db.js";
 import { loadScoutDoctrine } from "../lib/doctrine.js";
 import { GovernorStop, ModelGovernor } from "../lib/governor.js";
+import { processIntakeRows } from "../lib/intake.js";
 import { parseJsonArray } from "../lib/json.js";
 import { createProvider } from "../lib/provider.js";
 import { fetchSnapshot } from "../lib/sources.js";
@@ -63,9 +64,15 @@ export async function main() {
   const governor = new ModelGovernor(scoutConfig, createProvider(scoutConfig));
   const system = buildSystemPrompt();
   const allFindings: FindingDraft[] = [];
+  const intakeCount = await processIntakeRows(
+    governor,
+    scoutConfig,
+    system,
+    scoutConfig.max_findings_per_run,
+  );
 
   for (const target of config.research_targets) {
-    if (allFindings.length >= scoutConfig.max_findings_per_run) break;
+    if (allFindings.length + intakeCount >= scoutConfig.max_findings_per_run) break;
 
     const snapshots = await Promise.all(target.urls.map((url) => fetchSnapshot(url)));
     const response = await governor.complete("atlas-scout", {
@@ -92,9 +99,9 @@ export async function main() {
     allFindings.push(...parsed);
   }
 
-  const capped = allFindings.slice(0, scoutConfig.max_findings_per_run);
+  const capped = allFindings.slice(0, scoutConfig.max_findings_per_run - intakeCount);
   await insertFindings(capped);
-  console.log(`atlas-scout prepared ${capped.length} findings.`);
+  console.log(`atlas-scout prepared ${intakeCount + capped.length} findings.`);
 }
 
 main().catch((error: unknown) => {

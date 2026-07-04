@@ -34,7 +34,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -162,7 +164,7 @@ a {
 
 .nav-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
   padding: 12px 0;
   position: sticky;
@@ -467,6 +469,39 @@ a {
   color: var(--text);
   padding: 0 12px;
   font-size: 14px;
+}
+
+.drop-form {
+  gap: 12px;
+}
+
+.drop-form label {
+  color: var(--low);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.drop-form textarea,
+.drop-form select,
+.drop-form input[type="file"] {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090b08;
+  color: var(--text);
+  padding: 12px;
+  font-size: 14px;
+}
+
+.drop-form textarea {
+  min-height: 180px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.drop-form select {
+  min-height: 44px;
 }
 
 .form-message {

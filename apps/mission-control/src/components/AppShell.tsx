@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, ChartNoAxesCombined, CircleDollarSign, ListChecks, Power, Rss } from "lucide-react";
+import { Activity, ChartNoAxesCombined, CircleDollarSign, Inbox, ListChecks, Power, Rss } from "lucide-react";
 import { useEffect, useState } from "react";
 
-type NavKey = "feed" | "queue" | "experiments" | "costs";
+type NavKey = "feed" | "drop" | "queue" | "experiments" | "costs";
 
 const navItems: Array<{ key: NavKey; href: string; label: string; Icon: typeof Rss }> = [
   { key: "feed", href: "/feed", label: "Feed", Icon: Rss },
+  { key: "drop", href: "/drop", label: "Drop", Icon: Inbox },
   { key: "queue", href: "/queue", label: "Queue", Icon: ListChecks },
   { key: "experiments", href: "/experiments", label: "Tests", Icon: ChartNoAxesCombined },
   { key: "costs", href: "/costs", label: "Costs", Icon: CircleDollarSign },
