@@ -7,7 +7,7 @@ export function getRequiredEnv(name: string): string {
 }
 
 export function getAllowedEmails(): string[] {
-  return (process.env.ALLOWED_EMAILS ?? "sam@pacopeptide.com")
+  return (process.env.ALLOWED_EMAILS ?? "sam@pacopeptide.com,tortillabar@me.com")
     .split(",")
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
