@@ -76,6 +76,11 @@ export function FeedClient() {
                 </span>
               ))}
             </div>
+            {finding.source_url ? (
+              <a className="source-link" href={finding.source_url} target="_blank" rel="noreferrer">
+                Source ↗
+              </a>
+            ) : null}
           </article>
         ))}
       </div>

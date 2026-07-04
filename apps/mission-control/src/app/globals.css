@@ -311,6 +311,24 @@ a {
   border-color: rgba(255, 107, 107, 0.4);
 }
 
+.source-link {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid rgba(94, 215, 198, 0.38);
+  border-radius: 6px;
+  color: var(--teal);
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.source-link:hover {
+  border-color: rgba(94, 215, 198, 0.75);
+  background: rgba(94, 215, 198, 0.08);
+}
+
 .note {
   border-left: 2px solid var(--amber);
   padding-left: 10px;
