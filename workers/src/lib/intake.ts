@@ -21,6 +21,30 @@ type IntakeFinding = {
   confidence: number;
   tags: string[];
   channel?: string;
+  specimen?: SpecimenDraft;
+};
+
+type SpecimenDraft = {
+  platform?: string | null;
+  account_handle?: string | null;
+  post_url?: string | null;
+  property?: string | null;
+  channel?: string | null;
+  format?: string | null;
+  observed_metrics?: {
+    views?: number | null;
+    likes?: number | null;
+    comments?: number | null;
+    shares?: number | null;
+    followers?: number | null;
+  } | null;
+  observed_at?: string | null;
+  comment_sentiment?: string | null;
+  mechanics?: string[] | null;
+  dissection?: string | null;
+  engagement_ratios?: Record<string, number | null> | null;
+  authenticity?: "high" | "medium" | "low" | "unknown";
+  authenticity_reason?: string | null;
 };
 
 const allowedProperties = new Set(["store", "huh", "restaurant", "general"]);
@@ -118,6 +142,8 @@ export async function processIntakeRows(
         }
       }
 
+      await insertSpecimens(row, source, findings);
+
       insertedCount += findings.length;
       await markIntake(row.id, "processed", `created ${findings.length} findings`);
     } catch (error) {
@@ -158,6 +184,10 @@ Rules:
 - Every tag array must include "intake", "pulse", and "x".
 - Focus on positioning, hook, audience, content format, social proof, and what Sam can steal ethically.
 - Tie every claim to the linked account/post evidence.
+- If this is a social post/account, include a specimen object on the most relevant finding:
+  { platform, account_handle, post_url, property, channel, format, observed_metrics, observed_at, comment_sentiment, mechanics, dissection, engagement_ratios, authenticity, authenticity_reason }.
+- observed_metrics may include views, likes, comments, shares, followers only when visible or available. Unreadable metrics must be null.
+- authenticity must be high, medium, low, or unknown. Label it as heuristic, not accusation: ratios flag anomalies, they don't prove purchase.
 - Reject generic social media advice.
 
 URL:
@@ -175,6 +205,10 @@ Rules:
 - property must be one of: store, huh, restaurant, general.
 - Every tag array must include "intake".
 - Tie each claim to specific evidence from the dropped source.
+- If this is a social post/account, include a specimen object on the most relevant finding:
+  { platform, account_handle, post_url, property, channel, format, observed_metrics, observed_at, comment_sentiment, mechanics, dissection, engagement_ratios, authenticity, authenticity_reason }.
+- observed_metrics may include views, likes, comments, shares, followers only when visible. Unreadable metrics must be null.
+- authenticity must be high, medium, low, or unknown. Label it as heuristic, not accusation: ratios flag anomalies, they don't prove purchase.
 - Prefer buyer-producing hooks, objections, proof devices, formats, and next tests.
 - Reject generic summaries.
 
@@ -210,6 +244,11 @@ Rules:
 - Explicitly identify the ONE mechanic most worth stealing.
 - Output those as separate findings where distinct.
 - Tie every claim to visible evidence in the image.
+- If the image is a social post/account screenshot, include a specimen object on the most relevant finding:
+  { platform, account_handle, post_url, property, channel, format, observed_metrics, observed_at, comment_sentiment, mechanics, dissection, engagement_ratios, authenticity, authenticity_reason }.
+- observed_metrics may include views, likes, comments, shares, followers only when visible. Unreadable metrics must be null.
+- Assess comment quality if visible: generic/emoji-only/bot-cadence vs substantive.
+- authenticity must be high, medium, low, or unknown with a one-line reason. Label it as heuristic, not accusation: ratios flag anomalies, they don't prove purchase.
 - Reject generic visual description.
 
 Intake:
@@ -235,6 +274,45 @@ async function markIntake(id: string, status: "processed" | "failed", notes: str
     })
     .eq("id", id);
 
+  if (error) throw error;
+}
+
+async function insertSpecimens(row: IntakeRow, source: LoadedSource, findings: IntakeFinding[]) {
+  const specimens = findings
+    .map((finding) => finding.specimen)
+    .filter((specimen): specimen is SpecimenDraft => Boolean(specimen));
+
+  if (specimens.length === 0) return;
+
+  const rows = specimens.slice(0, 1).map((specimen) => {
+    const metrics = normalizeMetrics(specimen.observed_metrics);
+    const ratios = specimen.engagement_ratios ?? computeEngagementRatios(metrics);
+    return {
+      platform: specimen.platform ?? inferPlatform(row.content),
+      account_handle: specimen.account_handle ?? null,
+      post_url: row.kind === "url" ? row.content : specimen.post_url ?? source.sourceUrl,
+      property: normalizeProperty(row.property ?? specimen.property, null),
+      channel: inferChannel({
+        channel: source.kind === "x-url" ? "x" : specimen.channel,
+        sourceUrl: row.kind === "url" ? row.content : specimen.post_url ?? source.sourceUrl,
+        text: `${specimen.format ?? ""} ${(specimen.mechanics ?? []).join(" ")} ${specimen.dissection ?? ""}`,
+      }),
+      format: specimen.format ?? null,
+      observed_metrics: metrics,
+      observed_at: specimen.observed_at ?? new Date().toISOString(),
+      comment_sentiment: specimen.comment_sentiment ?? null,
+      mechanics: specimen.mechanics ?? [],
+      dissection: specimen.dissection ?? null,
+      engagement_ratios: ratios,
+      authenticity: specimen.authenticity ?? inferAuthenticity(metrics, ratios),
+      authenticity_reason: specimen.authenticity_reason ?? "Heuristic only: ratios flag anomalies; they do not prove purchase.",
+      intake_id: row.id,
+      pattern_ids: [],
+    };
+  });
+
+  const { error } = await atlasDb().from("specimens").insert(rows);
+  if (isMissingSpecimensError(error)) return;
   if (error) throw error;
 }
 
@@ -312,6 +390,57 @@ function isImageExtension(extension: string | undefined) {
 
 function isMissingChannelError(error: { code?: string; message?: string } | null) {
   return error?.code === "42703" || Boolean(error?.message?.includes("channel"));
+}
+
+function isMissingSpecimensError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42P01" || Boolean(error?.message?.includes("specimens"));
+}
+
+function normalizeMetrics(metrics: SpecimenDraft["observed_metrics"]) {
+  return {
+    views: numberOrNull(metrics?.views),
+    likes: numberOrNull(metrics?.likes),
+    comments: numberOrNull(metrics?.comments),
+    shares: numberOrNull(metrics?.shares),
+    followers: numberOrNull(metrics?.followers),
+  };
+}
+
+function numberOrNull(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function computeEngagementRatios(metrics: ReturnType<typeof normalizeMetrics>) {
+  return {
+    likes_per_follower: metrics.likes !== null && metrics.followers ? roundRatio(metrics.likes / metrics.followers) : null,
+    comments_per_like: metrics.comments !== null && metrics.likes ? roundRatio(metrics.comments / metrics.likes) : null,
+    views_per_like: metrics.views !== null && metrics.likes ? roundRatio(metrics.views / metrics.likes) : null,
+  };
+}
+
+function inferAuthenticity(metrics: ReturnType<typeof normalizeMetrics>, ratios: Record<string, number | null>) {
+  if (metrics.views === null && metrics.likes === null && metrics.comments === null) return "unknown";
+  if (ratios.views_per_like !== null && ratios.views_per_like > 400) return "low";
+  if (ratios.comments_per_like !== null && ratios.comments_per_like < 0.001) return "medium";
+  return "unknown";
+}
+
+function roundRatio(value: number) {
+  return Number(value.toFixed(4));
+}
+
+function inferPlatform(value: string) {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    if (host.includes("x.com") || host.includes("twitter.com")) return "x";
+    if (host.includes("tiktok.com")) return "tiktok";
+    if (host.includes("instagram.com")) return "instagram";
+    if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function imageMediaType(extension: string | undefined): "image/jpeg" | "image/png" | "image/webp" {

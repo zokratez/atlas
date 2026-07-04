@@ -50,6 +50,22 @@ type TimelinePoint = {
   durationDays: number;
 };
 
+type PublishedResult = {
+  action_id: string;
+  title: string;
+  property: string;
+  channel: string;
+  metric: string;
+  results: Array<{
+    id: string;
+    created_at: string;
+    metric: string;
+    value: number;
+    checkpoint: string;
+    note: string | null;
+  }>;
+};
+
 type CostReceipt = {
   id: string;
   created_at: string;
@@ -109,11 +125,13 @@ type TrendsPayload = {
   findingSeries: FindingPoint[];
   curationSeries: CurationPoint[];
   experiments: TimelinePoint[];
+  publishedResults: PublishedResult[];
   receipts: {
     costsByDay: Record<string, CostReceipt[]>;
     findingsByDay: Record<string, FindingReceipt[]>;
     curationByDay: Record<string, DecisionReceipt[]>;
     experimentsById: Record<string, ExperimentReceipt>;
+    resultsByActionId: Record<string, PublishedResult["results"]>;
   };
   counts: ReturnType<typeof emptyCounts>;
 };
@@ -122,7 +140,8 @@ type Selection =
   | { kind: "costs"; key: string }
   | { kind: "findings"; key: string }
   | { kind: "curation"; key: string }
-  | { kind: "experiment"; key: string };
+  | { kind: "experiment"; key: string }
+  | { kind: "results"; key: string };
 
 const chartText = "#9da893";
 const chartGrid = "rgba(43, 51, 40, 0.72)";
@@ -273,6 +292,29 @@ export function TrendsClient() {
                 </BarChart>
               </ResponsiveContainer>
             </ChartPanel>
+
+            <article className="chart-panel wide">
+              <button className="chart-panel-title" type="button" disabled>
+                Published results
+              </button>
+              <div className="spark-list">
+                {payload.publishedResults.length === 0 ? (
+                  <div className="empty-state">Published checkpoints land here after Sam logs results.</div>
+                ) : null}
+                {payload.publishedResults.map((item) => (
+                  <button
+                    className="spark-row"
+                    type="button"
+                    key={item.action_id}
+                    onClick={() => setSelection({ kind: "results", key: item.action_id })}
+                  >
+                    <span>{item.title}</span>
+                    <Sparkline values={item.results.map((result) => result.value)} />
+                    <strong>{item.metric}</strong>
+                  </button>
+                ))}
+              </div>
+            </article>
           </div>
 
           <ReceiptPanel payload={payload} selection={selection} />
@@ -384,6 +426,24 @@ function ReceiptPanel({ payload, selection }: { payload: TrendsPayload; selectio
     );
   }
 
+  if (selection.kind === "results") {
+    const rows = payload.receipts.resultsByActionId[selection.key] ?? [];
+    return (
+      <section className="receipt-panel">
+        <ReceiptHeading label="Result receipts" selection={selection.key} count={rows.length} href="/queue" />
+        {rows.map((row) => (
+          <article className="receipt-row tall" key={row.id}>
+            <div>
+              <strong>{row.checkpoint}: {row.value} {row.metric}</strong>
+              <span>{formatDate(row.created_at)}</span>
+            </div>
+            {row.note ? <p>{row.note}</p> : null}
+          </article>
+        ))}
+      </section>
+    );
+  }
+
   const experiment = payload.receipts.experimentsById[selection.key];
   return (
     <section className="receipt-panel">
@@ -477,7 +537,27 @@ function getReceiptCount(payload: TrendsPayload, selection: Selection) {
   if (selection.kind === "costs") return payload.receipts.costsByDay[selection.key]?.length ?? 0;
   if (selection.kind === "findings") return payload.receipts.findingsByDay[selection.key]?.length ?? 0;
   if (selection.kind === "curation") return payload.receipts.curationByDay[selection.key]?.length ?? 0;
+  if (selection.kind === "results") return payload.receipts.resultsByActionId[selection.key]?.length ?? 0;
   return payload.receipts.experimentsById[selection.key] ? 1 : 0;
+}
+
+function Sparkline({ values }: { values: number[] }) {
+  if (values.length === 0) return <svg className="sparkline" viewBox="0 0 80 24" aria-hidden="true" />;
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = Math.max(1, max - min);
+  const points = values
+    .map((value, index) => {
+      const x = values.length === 1 ? 40 : (index / (values.length - 1)) * 78 + 1;
+      const y = 22 - ((value - min) / range) * 20;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  return (
+    <svg className="sparkline" viewBox="0 0 80 24" aria-label="Result trend">
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
 }
 
 function actionTitle(action: ActionReceipt) {

@@ -76,31 +76,27 @@ export function FilterBar({
   onChange: (filters: AtlasFilters) => void;
 }) {
   return (
-    <div className="filter-bar" aria-label="Atlas filters">
-      <div className="filter-row" aria-label="Business filters">
-        {propertyItems.map((item) => (
-          <button
-            className={filters.property === item.key ? "active" : ""}
-            type="button"
-            key={item.key}
-            onClick={() => onChange({ ...filters, property: item.key })}
-          >
-            {item.label} {counts.properties[item.key] ?? 0}
-          </button>
-        ))}
-      </div>
-      <div className="filter-row" aria-label="Channel filters">
-        {channelItems.map((item) => (
-          <button
-            className={filters.channel === item.key ? "active" : ""}
-            type="button"
-            key={item.key}
-            onClick={() => onChange({ ...filters, channel: item.key })}
-          >
-            {item.label} {counts.channels[item.key] ?? 0}
-          </button>
-        ))}
-      </div>
+    <div className="filter-row" aria-label="Atlas filters">
+      {propertyItems.map((item) => (
+        <button
+          className={filters.property === item.key ? "active" : ""}
+          type="button"
+          key={`property-${item.key}`}
+          onClick={() => onChange({ ...filters, property: item.key })}
+        >
+          {item.label} {counts.properties[item.key] ?? 0}
+        </button>
+      ))}
+      {channelItems.map((item) => (
+        <button
+          className={filters.channel === item.key ? "active" : ""}
+          type="button"
+          key={`channel-${item.key}`}
+          onClick={() => onChange({ ...filters, channel: item.key })}
+        >
+          {item.label} {counts.channels[item.key] ?? 0}
+        </button>
+      ))}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { runComplianceGate } from "./compliance";
 export type Decision = "approve" | "kill" | "edit" | "revive";
 export type Verdict = "keep" | "kill" | "blemish";
 export type ActionStatus = "pending" | "approved" | "killed" | "published";
+export type ResultMetric = "views" | "reach" | "profile_visits" | "link_taps" | "follows" | "custom";
 export type AtlasPropertyFilter = "all" | "store" | "huh" | "restaurant" | "general";
 export type AtlasChannelFilter =
   | "all"
@@ -67,6 +68,23 @@ export async function listPatterns(filters: AtlasFilters = {}) {
       .map((id: string) => sourcesById.get(id))
       .filter(Boolean),
   }));
+}
+
+export async function listSpecimens(filters: AtlasFilters = {}) {
+  const { data, error } = await atlasDb()
+    .from("specimens")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (error) {
+    if (error.message.includes("specimens") || error.code === "42P01") return [];
+    throw error;
+  }
+
+  return filterRows(data ?? [], filters)
+    .sort((a, b) => specimenViews(b) - specimenViews(a))
+    .slice(0, 50);
 }
 
 export async function getFeedCounts() {
@@ -180,6 +198,49 @@ export async function markActionPublished(actionId: string) {
     .from("actions")
     .update({ status: "published", decided_at: new Date().toISOString() })
     .eq("id", actionId);
+
+  if (error) throw error;
+}
+
+export async function logActionResult(
+  actionId: string,
+  input: {
+    metric: ResultMetric;
+    value: number;
+    checkpoint: string;
+    note?: string;
+  },
+) {
+  const { data: action, error: actionError } = await atlasDb()
+    .from("actions")
+    .select("id, property, channel")
+    .eq("id", actionId)
+    .single();
+
+  if (actionError) throw actionError;
+
+  const row = {
+    property: action.property,
+    channel: normalizeChannel(action.channel),
+    source: "manual",
+    metric: input.metric,
+    value: input.value,
+    period_start: new Date().toISOString().slice(0, 10),
+    period_end: new Date().toISOString().slice(0, 10),
+    raw: {
+      action_id: actionId,
+      checkpoint: input.checkpoint,
+      note: input.note?.trim() || null,
+    },
+  };
+
+  const { error } = await atlasDb().from("results").insert(row);
+  if (isMissingResultsChannelError(error)) {
+    const { channel: _channel, ...fallbackRow } = row;
+    const { error: retryError } = await atlasDb().from("results").insert(fallbackRow);
+    if (retryError) throw retryError;
+    return;
+  }
 
   if (error) throw error;
 }
@@ -309,4 +370,13 @@ function normalizeChannel(value: string | null | undefined): AtlasChannelFilter 
   if (normalized === "yt") return "youtube";
   if (normalized === "twitter") return "x";
   return channels.includes(normalized as AtlasChannelFilter) ? (normalized as AtlasChannelFilter) : "general";
+}
+
+function specimenViews(row: { observed_metrics?: { views?: unknown } | null }) {
+  const views = Number(row.observed_metrics?.views ?? 0);
+  return Number.isFinite(views) ? views : 0;
+}
+
+function isMissingResultsChannelError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(error?.message?.includes("channel"));
 }
