@@ -4,8 +4,22 @@ import { requireEnv } from "./env.js";
 
 export type LlmMessage = {
   role: "user" | "assistant";
-  content: string;
+  content: string | LlmContentBlock[];
 };
+
+export type LlmContentBlock =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "image";
+      source: {
+        type: "base64";
+        media_type: "image/jpeg" | "image/png" | "image/webp";
+        data: string;
+      };
+    };
 
 export type LlmRequest = {
   system: string;
@@ -122,7 +136,15 @@ class XaiProvider implements LlmProvider {
       body: JSON.stringify({
         model: this.model,
         instructions: request.system,
-        input: request.messages,
+        input: request.messages.map((message) => ({
+          ...message,
+          content: typeof message.content === "string"
+            ? message.content
+            : message.content
+                .filter((block) => block.type === "text")
+                .map((block) => block.text)
+                .join("\n"),
+        })),
         max_output_tokens: request.maxTokens,
         temperature: request.temperature ?? 0.2,
         ...(tools.length > 0 ? { tools } : {}),

@@ -48,6 +48,9 @@ export async function processIntakeRows(
     try {
       const source = await loadIntakeSource(row);
       const maxFindings = Math.min(3, remainingCap - insertedCount);
+      const prompt = source.image
+        ? buildPhotoPrompt(row, maxFindings)
+        : buildIntakePrompt(row, source.text, maxFindings);
       const response = await governor.complete("atlas-scout", {
         system,
         maxTokens: 1200,
@@ -55,7 +58,19 @@ export async function processIntakeRows(
         messages: [
           {
             role: "user",
-            content: buildIntakePrompt(row, source.text, maxFindings),
+            content: source.image
+              ? [
+                  { type: "text", text: prompt },
+                  {
+                    type: "image",
+                    source: {
+                      type: "base64",
+                      media_type: source.image.mediaType,
+                      data: source.image.data,
+                    },
+                  },
+                ]
+              : prompt,
           },
         ],
       });
@@ -70,7 +85,7 @@ export async function processIntakeRows(
           evidence: finding.evidence,
           source_url: row.kind === "url" ? row.content : finding.source_url ?? source.sourceUrl,
           confidence: Math.max(0, Math.min(1, Number(finding.confidence ?? 0.5))),
-          tags: Array.from(new Set([...(finding.tags ?? []), "intake"])),
+          tags: Array.from(new Set([...(finding.tags ?? []), "intake", ...(source.image ? ["photo"] : [])])),
         }));
 
       if (findings.length > 0) {
@@ -126,6 +141,38 @@ ${JSON.stringify(
 )}`;
 }
 
+function buildPhotoPrompt(row: IntakeRow, maxFindings: number) {
+  return `Dissect this Sam-provided photo into Atlas marketing findings.
+
+Rules:
+- Return a JSON array only.
+- Max ${maxFindings} findings.
+- Each object must include: property, claim, evidence, source_url, confidence, tags.
+- property must be one of: store, huh, restaurant, general.
+- Every tag array must include "intake" and "photo".
+- Answer what this is, what marketing mechanics are at work, what's stealable, and what's the hook.
+- Explicitly extract visual hierarchy: what the eye hits first, second, and third.
+- Explicitly extract typography character: what the font choice signals.
+- Explicitly extract color/contrast strategy.
+- Explicitly extract layout density.
+- Explicitly identify the ONE mechanic most worth stealing.
+- Output those as separate findings where distinct.
+- Tie every claim to visible evidence in the image.
+- Reject generic visual description.
+
+Intake:
+${JSON.stringify(
+  {
+    id: row.id,
+    kind: row.kind,
+    property: row.property,
+    content: row.content,
+  },
+  null,
+  2,
+)}`;
+}
+
 async function markIntake(id: string, status: "processed" | "failed", notes: string) {
   const { error } = await atlasDb()
     .from("intake")
@@ -142,6 +189,10 @@ async function markIntake(id: string, status: "processed" | "failed", notes: str
 type LoadedSource = {
   text: string;
   sourceUrl: string | null;
+  image?: {
+    mediaType: "image/jpeg" | "image/png" | "image/webp";
+    data: string;
+  };
 };
 
 async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
@@ -171,6 +222,17 @@ async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
   const buffer = Buffer.from(await data.arrayBuffer());
   const extension = row.content.split(".").pop()?.toLowerCase();
 
+  if (isImageExtension(extension)) {
+    return {
+      text: "Photo intake file.",
+      sourceUrl: row.content,
+      image: {
+        mediaType: imageMediaType(extension),
+        data: buffer.toString("base64"),
+      },
+    };
+  }
+
   if (extension === "pdf") {
     const parser = new PDFParse({ data: buffer });
     const parsed = await parser.getText();
@@ -179,6 +241,16 @@ async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
   }
 
   return { text: buffer.toString("utf8"), sourceUrl: row.content };
+}
+
+function isImageExtension(extension: string | undefined) {
+  return extension === "jpg" || extension === "jpeg" || extension === "png" || extension === "webp";
+}
+
+function imageMediaType(extension: string | undefined): "image/jpeg" | "image/png" | "image/webp" {
+  if (extension === "png") return "image/png";
+  if (extension === "webp") return "image/webp";
+  return "image/jpeg";
 }
 
 function normalizeProperty(property: string | null | undefined, tags: string[] | null | undefined) {

@@ -4,7 +4,9 @@ import { requireApiUser } from "@/lib/atlas/auth";
 import { atlasDb, getServiceClient } from "@/lib/atlas/supabase";
 
 const allowedProperties = new Set(["store", "huh", "restaurant", "general"]);
-const allowedExtensions = new Set(["txt", "md", "pdf"]);
+const allowedExtensions = new Set(["txt", "md", "pdf", "jpg", "jpeg", "png", "webp", "heic", "heif"]);
+const imageExtensions = new Set(["jpg", "jpeg", "png", "webp", "heic", "heif"]);
+const videoExtensions = new Set(["mov", "mp4", "m4v", "webm", "avi"]);
 const bucketName = "atlas-intake";
 
 function normalizeProperty(value: FormDataEntryValue | null) {
@@ -40,8 +42,18 @@ export async function POST(request: Request) {
 
   if (file instanceof File && file.size > 0) {
     const extension = fileExtension(file.name);
+    if (file.type.startsWith("video/") || videoExtensions.has(extension)) {
+      return NextResponse.json(
+        { error: "Paste the link instead — Atlas reads transcripts." },
+        { status: 400 },
+      );
+    }
+
     if (!allowedExtensions.has(extension)) {
-      return NextResponse.json({ error: "Only .txt, .md, and .pdf files are accepted." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Only .txt, .md, .pdf, .jpg, .png, .webp, and .heic files are accepted." },
+        { status: 400 },
+      );
     }
 
     const path = `atlas-intake/${new Date().toISOString().slice(0, 10)}/${randomUUID()}-${safeFileName(file.name)}`;
@@ -50,7 +62,7 @@ export async function POST(request: Request) {
       .storage
       .from(bucketName)
       .upload(path, buffer, {
-        contentType: file.type || (extension === "pdf" ? "application/pdf" : "text/plain"),
+        contentType: file.type || contentTypeForExtension(extension),
         upsert: false,
       });
 
@@ -104,4 +116,14 @@ export async function POST(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ intake: data });
+}
+
+function contentTypeForExtension(extension: string) {
+  if (extension === "pdf") return "application/pdf";
+  if (extension === "md") return "text/markdown";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "png") return "image/png";
+  if (extension === "webp") return "image/webp";
+  if (imageExtensions.has(extension)) return "image/jpeg";
+  return "text/plain";
 }
