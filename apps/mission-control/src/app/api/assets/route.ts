@@ -5,7 +5,6 @@ import { createAsset, listAssets, type AssetKind } from "@/lib/atlas/data";
 import { getServiceClient } from "@/lib/atlas/supabase";
 
 const bucketName = "atlas-intake";
-const allowedProperties = new Set(["store", "huh", "restaurant", "general"]);
 const allowedKinds = new Set(["video", "image", "text"]);
 const maxSafekeepingVideoBytes = 50 * 1024 * 1024;
 
@@ -98,8 +97,8 @@ async function uploadFile(file: File, prefix: string, contentType: string) {
 }
 
 function normalizeProperty(value: FormDataEntryValue | null) {
-  const property = typeof value === "string" ? value.trim() : "";
-  return allowedProperties.has(property) ? property : "general";
+  const property = typeof value === "string" ? slugify(value) : "";
+  return property || "general";
 }
 
 function safeFileName(name: string) {
@@ -110,4 +109,14 @@ function cleanStoragePath(value: FormDataEntryValue | null) {
   if (typeof value !== "string") return null;
   const path = value.trim();
   return path.startsWith("atlas-assets/") ? path : null;
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }

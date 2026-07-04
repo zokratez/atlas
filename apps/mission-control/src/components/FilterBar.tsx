@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export type AtlasPropertyFilter = "all" | "store" | "huh" | "restaurant" | "general";
+export type AtlasPropertyFilter = string;
 export type AtlasChannelFilter =
   | "all"
   | "seo"
@@ -19,16 +19,31 @@ export type AtlasFilters = {
 };
 
 type Counts = {
-  properties: Record<AtlasPropertyFilter, number>;
+  properties: Record<string, number>;
   channels: Record<AtlasChannelFilter, number>;
 };
 
-const propertyItems: Array<{ key: AtlasPropertyFilter; label: string }> = [
+export type PropertyOption = {
+  slug: string;
+  display_name: string;
+  color: string | null;
+  active: boolean;
+};
+
+const fallbackPropertyItems: PropertyOption[] = [
+  { slug: "store", display_name: "PACO Peptide", color: "#7dd3fc", active: true },
+  { slug: "huh", display_name: "Huh? Learn Spanish", color: "#fda4af", active: true },
+  { slug: "restaurant", display_name: "Motel West / PACO", color: "#facc15", active: true },
+  { slug: "general", display_name: "General", color: "#a3a3a3", active: true },
+];
+
+const propertyItems: Array<{ key: AtlasPropertyFilter; label: string; color?: string | null }> = [
   { key: "all", label: "All" },
-  { key: "store", label: "Store" },
-  { key: "huh", label: "Huh?" },
-  { key: "restaurant", label: "Restaurant" },
-  { key: "general", label: "General" },
+  ...fallbackPropertyItems.map((property) => ({
+    key: property.slug,
+    label: property.display_name,
+    color: property.color,
+  })),
 ];
 
 const channelItems: Array<{ key: AtlasChannelFilter; label: string }> = [
@@ -66,6 +81,19 @@ export function useAtlasFilters() {
   return { filters, setFilters: updateFilters, ready };
 }
 
+export function useProperties(includeInactive = false) {
+  const [properties, setProperties] = useState<PropertyOption[]>(fallbackPropertyItems);
+
+  useEffect(() => {
+    fetch(`/api/properties${includeInactive ? "?includeInactive=true" : ""}`)
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("properties unavailable")))
+      .then((payload) => setProperties(payload.properties ?? fallbackPropertyItems))
+      .catch(() => setProperties(fallbackPropertyItems));
+  }, [includeInactive]);
+
+  return properties;
+}
+
 export function FilterBar({
   filters,
   counts,
@@ -75,14 +103,25 @@ export function FilterBar({
   counts: Counts;
   onChange: (filters: AtlasFilters) => void;
 }) {
+  const properties = useProperties(false);
+  const dynamicPropertyItems = [
+    { key: "all", label: "All", color: null },
+    ...properties.map((property) => ({
+      key: property.slug,
+      label: property.display_name,
+      color: property.color,
+    })),
+  ];
+
   return (
     <div className="filter-row" aria-label="Atlas filters">
-      {propertyItems.map((item) => (
+      {dynamicPropertyItems.map((item) => (
         <button
           className={filters.property === item.key ? "active" : ""}
           type="button"
           key={`property-${item.key}`}
           onClick={() => onChange({ ...filters, property: item.key })}
+          style={item.color ? { borderColor: item.color } : undefined}
         >
           {item.label} {counts.properties[item.key] ?? 0}
         </button>
@@ -109,7 +148,7 @@ export function emptyCounts(): Counts {
 }
 
 function normalizeFilters(value: Partial<AtlasFilters>): AtlasFilters {
-  const property = propertyItems.some((item) => item.key === value.property) ? value.property : "all";
+  const property = typeof value.property === "string" && value.property ? value.property : "all";
   const channel = channelItems.some((item) => item.key === value.channel) ? value.channel : "all";
   return { property: property ?? "all", channel: channel ?? "all" };
 }

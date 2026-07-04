@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { FilterBar, emptyCounts, useAtlasFilters, type AtlasFilters } from "./FilterBar";
+import { useEffect, useMemo, useState } from "react";
+import { FilterBar, emptyCounts, useAtlasFilters, useProperties, type AtlasFilters } from "./FilterBar";
 
 type ActionStatus = "pending" | "approved" | "killed" | "published";
 type QueueDecision = "approve" | "kill" | "edit" | "revive";
@@ -19,6 +19,16 @@ type Action = {
   compliance_status: string;
   compliance_notes: string | null;
   status: ActionStatus;
+};
+
+type Rendition = {
+  channel?: string;
+  title?: string;
+  final_text?: string;
+  text?: string;
+  scheduled_for?: string | null;
+  compliance_status?: string;
+  compliance_notes?: string | null;
 };
 
 type ReasonPicker = {
@@ -58,6 +68,15 @@ export function QueueClient() {
   const [resultNote, setResultNote] = useState("");
   const [density, setDensity] = useState<Density>("compact");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showRegister, setShowRegister] = useState(false);
+  const [registerProperty, setRegisterProperty] = useState("huh");
+  const [registerChannel, setRegisterChannel] = useState("instagram");
+  const [registerPostedAt, setRegisterPostedAt] = useState(new Date().toISOString().slice(0, 16));
+  const [registerCaption, setRegisterCaption] = useState("");
+  const [registerScreenshot, setRegisterScreenshot] = useState<File | null>(null);
+  const [registerMessage, setRegisterMessage] = useState("");
+  const properties = useProperties(false);
+  const propertyLabels = useMemo(() => new Map(properties.map((property) => [property.slug, property.display_name])), [properties]);
 
   useEffect(() => {
     const storedDensity = window.localStorage.getItem(densityKey);
@@ -141,6 +160,49 @@ export function QueueClient() {
     setBusyId(null);
   }
 
+  async function registerExternalPost(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusyId("register-external-post");
+    setRegisterMessage("");
+
+    const form = new FormData();
+    form.set("property", registerProperty);
+    form.set("channel", registerChannel);
+    form.set("posted_at", registerPostedAt);
+    form.set("caption", registerCaption);
+    if (registerScreenshot) form.set("screenshot", registerScreenshot);
+
+    const response = await fetch("/api/actions/register", {
+      method: "POST",
+      body: form,
+    });
+
+    if (response.ok) {
+      setRegisterMessage("Registered. You can log checkpoints on it now.");
+      setRegisterCaption("");
+      setRegisterScreenshot(null);
+      setShowRegister(false);
+      await load("published", filters);
+      setStatus("published");
+    } else {
+      const payload = await response.json().catch(() => ({}));
+      setRegisterMessage(String(payload.error ?? "Register failed."));
+    }
+    setBusyId(null);
+  }
+
+  async function publishRendition(action: Action, rendition: Rendition, index: number) {
+    const text = finalText(rendition);
+    if (text) await navigator.clipboard.writeText(text);
+    const url = platformUrl(rendition.channel ?? action.channel ?? "general");
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+
+    setBusyId(action.id);
+    const response = await fetch(`/api/actions/${action.id}/renditions/${index}/publish`, { method: "POST" });
+    if (response.ok) await load("published", filters);
+    setBusyId(null);
+  }
+
   return (
     <section className={`view density-${density}`}>
       <div className="view-heading">
@@ -166,6 +228,40 @@ export function QueueClient() {
         <button className={density === "comfortable" ? "active" : ""} type="button" onClick={() => setStoredDensity("comfortable")}>Comfortable</button>
         <FilterBar filters={filters} counts={counts} onChange={setFilters} />
       </div>
+
+      {status === "published" ? (
+        <div className="button-row">
+          <button type="button" className={showRegister ? "active" : "secondary"} onClick={() => setShowRegister(!showRegister)}>
+            Register external post
+          </button>
+        </div>
+      ) : null}
+
+      {showRegister ? (
+        <form className="panel result-form register-form" onSubmit={registerExternalPost}>
+          <select value={registerProperty} onChange={(event) => setRegisterProperty(event.target.value)}>
+            {properties.map((item) => (
+              <option value={item.slug} key={item.slug}>{item.display_name}</option>
+            ))}
+          </select>
+          <select value={registerChannel} onChange={(event) => setRegisterChannel(event.target.value)}>
+            <option value="instagram">IG</option>
+            <option value="tiktok">TikTok</option>
+            <option value="youtube">YT</option>
+            <option value="x">X</option>
+            <option value="seo">SEO</option>
+            <option value="email">Email</option>
+            <option value="community">Community</option>
+          </select>
+          <input type="datetime-local" value={registerPostedAt} onChange={(event) => setRegisterPostedAt(event.target.value)} />
+          <textarea value={registerCaption} onChange={(event) => setRegisterCaption(event.target.value)} placeholder="Caption or description" rows={4} />
+          <input type="file" accept="image/*" onChange={(event) => setRegisterScreenshot(event.target.files?.[0] ?? null)} />
+          <button type="submit" disabled={busyId === "register-external-post" || !registerCaption.trim()}>
+            Register
+          </button>
+          {registerMessage ? <p className="form-message sent">{registerMessage}</p> : null}
+        </form>
+      ) : null}
 
       {reasonPicker ? (
         <article className="panel reason-panel">
@@ -217,7 +313,7 @@ export function QueueClient() {
           <article className={`panel dense-card action-panel ${expandedId === action.id ? "expanded" : ""}`} key={action.id}>
             <div className="card-line" onClick={() => setExpandedId(expandedId === action.id ? null : action.id)}>
               <div className="micro-badges">
-                <span>{action.property}</span>
+                <span>{labelProperty(action.property, propertyLabels)}</span>
                 <span>{action.channel ?? "general"}</span>
               </div>
               <strong>{String(action.payload.title ?? action.payload.hook ?? "Untitled action")}</strong>
@@ -248,6 +344,7 @@ export function QueueClient() {
                   onPublish={() => markPublished(action)}
                   onLogResults={() => setResultActionId(resultActionId === action.id ? null : action.id)}
                 />
+                <RenditionList action={action} busy={busyId === action.id} onPublish={publishRendition} propertyLabels={propertyLabels} />
                 {resultActionId === action.id ? (
                   <div className="result-form">
                     <select value={resultMetric} onChange={(event) => setResultMetric(event.target.value)}>
@@ -352,6 +449,46 @@ function QueueButtons({
   );
 }
 
+function RenditionList({
+  action,
+  busy,
+  onPublish,
+  propertyLabels,
+}: {
+  action: Action;
+  busy: boolean;
+  onPublish: (action: Action, rendition: Rendition, index: number) => void;
+  propertyLabels: Map<string, string>;
+}) {
+  const renditions = Array.isArray(action.payload.renditions) ? action.payload.renditions as Rendition[] : [];
+  if (renditions.length === 0) return null;
+
+  return (
+    <div className="receipt-list">
+      {renditions.map((rendition, index) => (
+        <article className="panel dense-card" key={`${action.id}:rendition:${index}`}>
+          <div className="card-line">
+            <div className="micro-badges">
+              <span>{labelProperty(action.property, propertyLabels)}</span>
+              <span>{rendition.channel ?? action.channel ?? "general"}</span>
+              <span>{rendition.compliance_status ?? "passed"}</span>
+            </div>
+            <strong>{rendition.title ?? `${rendition.channel ?? "channel"} rendition`}</strong>
+            <span>{rendition.scheduled_for ? formatDate(rendition.scheduled_for) : "unscheduled"}</span>
+          </div>
+          <p>{finalText(rendition)}</p>
+          {rendition.compliance_notes ? <p className="note">{rendition.compliance_notes}</p> : null}
+          <div className="button-row">
+            <button type="button" onClick={() => onPublish(action, rendition, index)} disabled={busy || action.status === "published"}>
+              Publish now
+            </button>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function queryString(filters: AtlasFilters, status: ActionStatus) {
   const params = new URLSearchParams({ status });
   if (filters.property !== "all") params.set("property", filters.property);
@@ -387,4 +524,21 @@ function formatDate(value: string) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function finalText(rendition: Rendition) {
+  return String(rendition.final_text ?? rendition.text ?? "");
+}
+
+function platformUrl(channel: string) {
+  if (channel === "instagram") return "instagram://camera";
+  if (channel === "tiktok") return "https://www.tiktok.com/upload";
+  if (channel === "youtube") return "https://studio.youtube.com/";
+  if (channel === "x") return "https://x.com/compose/post";
+  if (channel === "email") return "mailto:";
+  return "";
+}
+
+function labelProperty(slug: string, labels: Map<string, string>) {
+  return labels.get(slug) ?? slug;
 }

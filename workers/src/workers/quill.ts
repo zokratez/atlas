@@ -56,8 +56,6 @@ type TasteDecision = {
 };
 
 const quillSoulPath = "/Users/samoteo/.openclaw/agents/quill/SOUL.md";
-const properties = ["store", "huh", "restaurant", "general"];
-
 function voiceForProperty(property: string) {
   if (property === "store") {
     return "pain, truth, funny, real. Quiet proof. RUO only. Zero hype. No health, human-use, dosing, cosmetic, customer-results, or paid-ad targeting claims.";
@@ -301,7 +299,7 @@ export async function main() {
   const governor = new ModelGovernor(quillConfig, createProvider(quillConfig));
   let inserted = 0;
 
-  for (const property of properties) {
+  for (const property of config.properties) {
     const usedToday = await todaysActionCount(property);
     const remaining = Math.max(0, 5 - usedToday);
     if (remaining === 0) continue;

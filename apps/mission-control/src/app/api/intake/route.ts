@@ -1,17 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireApiRole } from "@/lib/atlas/auth";
+import { listIntakeHistory } from "@/lib/atlas/data";
 import { atlasDb, getServiceClient } from "@/lib/atlas/supabase";
 
-const allowedProperties = new Set(["store", "huh", "restaurant", "general"]);
 const allowedExtensions = new Set(["txt", "md", "pdf", "jpg", "jpeg", "png", "webp", "heic", "heif"]);
 const imageExtensions = new Set(["jpg", "jpeg", "png", "webp", "heic", "heif"]);
 const videoExtensions = new Set(["mov", "mp4", "m4v", "webm", "avi"]);
 const bucketName = "atlas-intake";
 
+export async function GET() {
+  const user = await requireApiRole("curator");
+  if (user instanceof NextResponse) return user;
+
+  const history = await listIntakeHistory();
+  return NextResponse.json({ history });
+}
+
 function normalizeProperty(value: FormDataEntryValue | null) {
-  const property = typeof value === "string" ? value.trim() : "";
-  return allowedProperties.has(property) ? property : null;
+  const property = typeof value === "string" ? slugify(value) : "";
+  return property || null;
 }
 
 function detectKind(content: string) {
@@ -126,4 +134,14 @@ function contentTypeForExtension(extension: string) {
   if (extension === "webp") return "image/webp";
   if (imageExtensions.has(extension)) return "image/jpeg";
   return "text/plain";
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }

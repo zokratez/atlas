@@ -282,15 +282,15 @@ function normalizeChannel(value: string | null | undefined) {
 
 function buildCounts(rows: Array<{ property?: string | null; channel?: string | null }>) {
   const counts = {
-    properties: { all: 0, store: 0, huh: 0, restaurant: 0, general: 0 },
+    properties: { all: 0, store: 0, huh: 0, restaurant: 0, general: 0 } as Record<string, number>,
     channels: { all: 0, seo: 0, email: 0, tiktok: 0, instagram: 0, youtube: 0, x: 0, community: 0 },
   };
 
   for (const row of rows) {
-    const property = row.property === "store" || row.property === "huh" || row.property === "restaurant" ? row.property : "general";
+    const property = row.property ?? "general";
     const channel = normalizeChannel(row.channel);
     counts.properties.all += 1;
-    counts.properties[property] += 1;
+    counts.properties[property] = (counts.properties[property] ?? 0) + 1;
     counts.channels.all += 1;
     if (channel === "seo" || channel === "email" || channel === "tiktok" || channel === "instagram" || channel === "youtube" || channel === "x" || channel === "community") {
       counts.channels[channel] += 1;

@@ -34,6 +34,39 @@ module.exports = {
       }
     },
     {
+      name: "atlas-producer",
+      cwd: __dirname,
+      script: "dist/workers/producer.js",
+      interpreter: "node",
+      cron_restart: "45 2 * * *",
+      autorestart: false,
+      env: {
+        NODE_ENV: "production"
+      }
+    },
+    {
+      name: "atlas-results-autopilot",
+      cwd: __dirname,
+      script: "dist/workers/results-autopilot.js",
+      interpreter: "node",
+      cron_restart: "15 3 * * *",
+      autorestart: false,
+      env: {
+        NODE_ENV: "production"
+      }
+    },
+    {
+      name: "atlas-ig-puller",
+      cwd: __dirname,
+      script: "dist/workers/ig-puller.js",
+      interpreter: "node",
+      cron_restart: "30 3 * * *",
+      autorestart: false,
+      env: {
+        NODE_ENV: "production"
+      }
+    },
+    {
       name: "atlas-lens-weekly",
       cwd: __dirname,
       script: "dist/workers/lens.js",

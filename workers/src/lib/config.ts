@@ -13,7 +13,7 @@ export type ResearchTarget = {
 
 export type ProviderName = "anthropic" | "xai";
 
-export type JobName = "scout" | "lens" | "scout-pulse" | "quill";
+export type JobName = "scout" | "lens" | "scout-pulse" | "quill" | "producer";
 
 export type JobConfig = {
   provider: ProviderName;

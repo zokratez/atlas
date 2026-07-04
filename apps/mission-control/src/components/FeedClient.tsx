@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { FilterBar, emptyCounts, useAtlasFilters, type AtlasFilters } from "./FilterBar";
+import { useEffect, useMemo, useState } from "react";
+import { FilterBar, emptyCounts, useAtlasFilters, useProperties, type AtlasFilters } from "./FilterBar";
 
 type Finding = {
   id: string;
@@ -16,6 +16,12 @@ type Finding = {
   tags: string[] | null;
   cadence?: "weekly" | "monthly" | "quarterly" | null;
   pinned?: boolean | null;
+  intake_coverage?: {
+    source_chars?: number;
+    analyzed_chars?: number;
+    coverage_pct?: number;
+    method?: string;
+  } | null;
 };
 
 type Pattern = {
@@ -63,6 +69,8 @@ export function FeedClient() {
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
   const [counts, setCounts] = useState(emptyCounts());
+  const properties = useProperties(false);
+  const propertyLabels = useMemo(() => new Map(properties.map((property) => [property.slug, property.display_name])), [properties]);
 
   useEffect(() => {
     setShowWelcome(window.localStorage.getItem("atlas-welcome-dismissed") !== "true");
@@ -148,6 +156,7 @@ export function FeedClient() {
         {mode === "findings" ? findings.map((finding) => (
           <FindingCard
             finding={finding}
+            propertyLabels={propertyLabels}
             expanded={expandedId === finding.id}
             onToggle={() => setExpandedId(expandedId === finding.id ? null : finding.id)}
             key={finding.id}
@@ -156,6 +165,7 @@ export function FeedClient() {
         {mode === "patterns" ? patterns.map((pattern) => (
           <PatternCard
             pattern={pattern}
+            propertyLabels={propertyLabels}
             expanded={expandedId === pattern.id}
             onToggle={() => setExpandedId(expandedId === pattern.id ? null : pattern.id)}
             key={pattern.id}
@@ -164,6 +174,7 @@ export function FeedClient() {
         {mode === "specimens" ? specimens.map((specimen) => (
           <SpecimenCard
             specimen={specimen}
+            propertyLabels={propertyLabels}
             expanded={expandedId === specimen.id}
             onToggle={() => setExpandedId(expandedId === specimen.id ? null : specimen.id)}
             key={specimen.id}
@@ -174,13 +185,14 @@ export function FeedClient() {
   );
 }
 
-function FindingCard({ finding, expanded, onToggle }: { finding: Finding; expanded: boolean; onToggle: () => void }) {
+function FindingCard({ finding, expanded, onToggle, propertyLabels }: { finding: Finding; expanded: boolean; onToggle: () => void; propertyLabels?: Map<string, string> }) {
   return (
     <article className={`panel dense-card ${expanded ? "expanded" : ""}`} onClick={onToggle}>
-      <CardLine left={finding.claim} property={finding.property} channel={finding.channel} right={formatPercent(finding.confidence)} sourceUrl={finding.source_url} />
+      <CardLine left={finding.claim} property={labelProperty(finding.property, propertyLabels)} channel={finding.channel} right={formatPercent(finding.confidence)} sourceUrl={finding.source_url} />
       {expanded ? (
         <div className="card-expanded">
           {finding.evidence ? <p>{finding.evidence}</p> : null}
+          {finding.intake_coverage ? <p className="note">{coverageLabel(finding.intake_coverage)}</p> : null}
           <div className="tag-row">
             <span className="chip">{finding.agent}</span>
             <span className="chip">{formatDate(finding.created_at)}</span>
@@ -192,10 +204,10 @@ function FindingCard({ finding, expanded, onToggle }: { finding: Finding; expand
   );
 }
 
-function PatternCard({ pattern, expanded, onToggle }: { pattern: Pattern; expanded: boolean; onToggle: () => void }) {
+function PatternCard({ pattern, expanded, onToggle, propertyLabels }: { pattern: Pattern; expanded: boolean; onToggle: () => void; propertyLabels?: Map<string, string> }) {
   return (
     <article className={`panel dense-card ${expanded ? "expanded" : ""}`} onClick={onToggle}>
-      <CardLine left={pattern.name} property={pattern.property} channel={pattern.channel} right={`seen ${pattern.support_count}x`} />
+      <CardLine left={pattern.name} property={labelProperty(pattern.property, propertyLabels)} channel={pattern.channel} right={`seen ${pattern.support_count}x`} />
       {expanded ? (
         <div className="card-expanded">
           {pattern.description ? <p>{pattern.description}</p> : null}
@@ -204,7 +216,7 @@ function PatternCard({ pattern, expanded, onToggle }: { pattern: Pattern; expand
             <span className="chip">confidence {formatPercent(pattern.confidence)}</span>
           </div>
           <div className="receipt-list">
-            {pattern.source_findings.map((finding) => <FindingCard finding={finding} expanded={false} onToggle={() => undefined} key={finding.id} />)}
+            {pattern.source_findings.map((finding) => <FindingCard finding={finding} expanded={false} onToggle={() => undefined} propertyLabels={propertyLabels} key={finding.id} />)}
           </div>
         </div>
       ) : null}
@@ -212,13 +224,13 @@ function PatternCard({ pattern, expanded, onToggle }: { pattern: Pattern; expand
   );
 }
 
-function SpecimenCard({ specimen, expanded, onToggle }: { specimen: Specimen; expanded: boolean; onToggle: () => void }) {
+function SpecimenCard({ specimen, expanded, onToggle, propertyLabels }: { specimen: Specimen; expanded: boolean; onToggle: () => void; propertyLabels?: Map<string, string> }) {
   const views = specimen.observed_metrics?.views;
   return (
     <article className={`panel dense-card ${expanded ? "expanded" : ""}`} onClick={onToggle}>
       <CardLine
         left={`${specimen.account_handle ?? specimen.platform ?? "Specimen"} ${specimen.format ?? ""}`.trim()}
-        property={specimen.property ?? "general"}
+        property={labelProperty(specimen.property ?? "general", propertyLabels)}
         channel={specimen.channel ?? "general"}
         right={views ? `${compactNumber(views)} views` : specimen.authenticity ?? "unknown"}
         sourceUrl={specimen.post_url}
@@ -289,4 +301,16 @@ function compactNumber(value: number) {
   if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))}M`;
   if (value >= 1_000) return `${Number((value / 1_000).toFixed(1))}K`;
   return String(Math.round(value));
+}
+
+function labelProperty(slug: string, labels?: Map<string, string>) {
+  return labels?.get(slug) ?? slug;
+}
+
+function coverageLabel(value: NonNullable<Finding["intake_coverage"]>) {
+  const pct = Number(value.coverage_pct ?? 100);
+  const words = Math.max(0, Math.round(Number(value.source_chars ?? 0) / 5));
+  const method = String(value.method ?? "full_text").replace("_", " ");
+  if (pct >= 100) return `Studied: 100% of ${method} (${words.toLocaleString()} words)`;
+  return `Studied: ${pct}% - truncated at token budget.`;
 }

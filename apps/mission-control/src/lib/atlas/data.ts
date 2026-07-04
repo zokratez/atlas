@@ -8,7 +8,7 @@ export type ActionStatus = "pending" | "approved" | "killed" | "published";
 export type ResultMetric = "views" | "reach" | "profile_visits" | "link_taps" | "follows" | "custom";
 export type AssetKind = "video" | "image" | "text";
 export type AssetStatus = "shelf" | "scheduled" | "posted" | "retired";
-export type AtlasPropertyFilter = "all" | "store" | "huh" | "restaurant" | "general";
+export type AtlasPropertyFilter = string;
 export type AtlasChannelFilter =
   | "all"
   | "seo"
@@ -24,7 +24,13 @@ export type AtlasFilters = {
   channel?: AtlasChannelFilter;
 };
 
-const properties: AtlasPropertyFilter[] = ["all", "store", "huh", "restaurant", "general"];
+const fallbackProperties = [
+  { slug: "store", display_name: "PACO Peptide", color: "#7dd3fc", active: true },
+  { slug: "huh", display_name: "Huh? Learn Spanish", color: "#fda4af", active: true },
+  { slug: "restaurant", display_name: "Motel West / PACO", color: "#facc15", active: true },
+  { slug: "general", display_name: "General", color: "#a3a3a3", active: true },
+];
+const properties: AtlasPropertyFilter[] = ["all", ...fallbackProperties.map((property) => property.slug)];
 const channels: AtlasChannelFilter[] = ["all", "seo", "email", "tiktok", "instagram", "youtube", "x", "community"];
 
 export async function listFindings(filters: AtlasFilters = {}) {
@@ -145,6 +151,103 @@ export async function listAssets() {
   return data ?? [];
 }
 
+export async function listProperties({ includeInactive = false } = {}) {
+  const { data, error } = await atlasDb()
+    .from("properties")
+    .select("slug, display_name, color, active, created_at")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    if (error.code === "42P01" || error.message.includes("properties")) return fallbackProperties;
+    throw error;
+  }
+
+  const rows = data ?? [];
+  return includeInactive ? rows : rows.filter((property) => property.active !== false);
+}
+
+export async function upsertProperty(input: {
+  slug?: string;
+  displayName: string;
+  color?: string | null;
+}) {
+  const displayName = input.displayName.trim();
+  const slug = slugify(input.slug || displayName);
+  if (!slug || !displayName) throw new Error("Property name required.");
+
+  const { data, error } = await atlasDb()
+    .from("properties")
+    .upsert({
+      slug,
+      display_name: displayName,
+      color: normalizeColor(input.color),
+      active: true,
+    }, { onConflict: "slug" })
+    .select("slug, display_name, color, active, created_at")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function updateProperty(slug: string, input: { displayName?: string; color?: string | null; active?: boolean }) {
+  const update: Record<string, unknown> = {};
+  if (input.displayName !== undefined) update.display_name = input.displayName.trim();
+  if (input.color !== undefined) update.color = normalizeColor(input.color);
+  if (input.active !== undefined) update.active = input.active;
+
+  const { data, error } = await atlasDb()
+    .from("properties")
+    .update(update)
+    .eq("slug", slug)
+    .select("slug, display_name, color, active, created_at")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function listIntakeHistory() {
+  const { data, error } = await atlasDb()
+    .from("intake")
+    .select("id, created_at, kind, content, property, status, processed_at, notes, finding_ids, source_chars, analyzed_chars, coverage_pct, coverage_method")
+    .order("created_at", { ascending: false })
+    .limit(40);
+
+  if (error) {
+    if (error.code !== "42703") throw error;
+    const fallback = await atlasDb()
+      .from("intake")
+      .select("id, created_at, kind, content, property, status, processed_at, notes")
+      .order("created_at", { ascending: false })
+      .limit(40);
+    if (fallback.error) throw fallback.error;
+    return (fallback.data ?? []).map((row) => ({ ...row, finding_ids: [], findings: [] }));
+  }
+
+  const rows = data ?? [];
+  const findingIds = Array.from(
+    new Set(rows.flatMap((row) => (Array.isArray(row.finding_ids) ? row.finding_ids : []))),
+  );
+
+  if (findingIds.length === 0) return rows.map((row) => ({ ...row, findings: [] }));
+
+  const findingsResult = await atlasDb()
+    .from("findings")
+    .select("id, created_at, property, channel, claim, evidence, source_url, confidence, tags, intake_coverage")
+    .in("id", findingIds);
+
+  if (findingsResult.error) throw findingsResult.error;
+  const findingsById = new Map((findingsResult.data ?? []).map((finding) => [finding.id, finding]));
+
+  return rows.map((row) => ({
+    ...row,
+    findings: (Array.isArray(row.finding_ids) ? row.finding_ids : [])
+      .map((id: string) => findingsById.get(id))
+      .filter(Boolean),
+  }));
+}
+
 export async function createAsset(input: {
   property: string;
   kind: AssetKind;
@@ -177,6 +280,54 @@ export async function createAsset(input: {
 
   if (error) throw error;
   return data;
+}
+
+export async function createExternalPostAction(
+  operator: AtlasUser,
+  input: {
+    property: string;
+    channel: string;
+    postedAt: string;
+    caption: string;
+    screenshotPath?: string | null;
+  },
+) {
+  const property = normalizeProperty(input.property);
+  const channel = normalizeChannel(input.channel);
+  const caption = input.caption.trim();
+  const postedAt = new Date(input.postedAt);
+  if (!caption) throw new Error("Caption is required.");
+  if (Number.isNaN(postedAt.getTime())) throw new Error("Posted date is invalid.");
+
+  const compliance = runComplianceGate(property, caption);
+  const title = caption.slice(0, 96) || "Registered external post";
+  const { data: action, error } = await atlasDb()
+    .from("actions")
+    .insert({
+      agent: "sam-manual",
+      property,
+      kind: "post",
+      channel,
+      payload: {
+        title,
+        caption,
+        body: caption,
+        external_post: true,
+        registered_by: operator.email,
+        posted_at: postedAt.toISOString(),
+        screenshot_path: input.screenshotPath ?? null,
+      },
+      compliance_status: property === "store" ? compliance.status : "passed",
+      compliance_notes: property === "store" ? compliance.notes : null,
+      status: "published",
+      decided_at: postedAt.toISOString(),
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  return action;
 }
 
 export async function prepAssetPost(assetId: string) {
@@ -363,6 +514,75 @@ export async function markActionPublished(actionId: string) {
   if (error) throw error;
 }
 
+export async function publishActionRendition(
+  actionId: string,
+  renditionIndex: number,
+  operator: AtlasUser,
+) {
+  const { data: action, error: actionError } = await atlasDb()
+    .from("actions")
+    .select("id, property, channel, kind, payload")
+    .eq("id", actionId)
+    .single();
+
+  if (actionError) throw actionError;
+
+  const payload = (action.payload ?? {}) as Record<string, unknown>;
+  const renditions = Array.isArray(payload.renditions) ? payload.renditions : [];
+  const rendition = renditions[renditionIndex] as Record<string, unknown> | undefined;
+  if (!rendition) throw new Error("Rendition not found.");
+
+  const channel = normalizeChannel(String(rendition.channel ?? action.channel ?? "general"));
+  const publishedAt = new Date().toISOString();
+  const nextPayload = {
+    ...payload,
+    published_rendition: {
+      index: renditionIndex,
+      channel,
+      published_at: publishedAt,
+      operator_email: operator.email,
+    },
+  };
+
+  const { error: updateError } = await atlasDb()
+    .from("actions")
+    .update({
+      status: "published",
+      decided_at: publishedAt,
+      channel,
+      payload: nextPayload,
+    })
+    .eq("id", actionId);
+
+  if (updateError) throw updateError;
+
+  const title = String(rendition.title ?? payload.title ?? payload.hook ?? "Published post");
+  const checkpoints = ["24h", "72h", "7d", "30d"];
+  const reminderRows = checkpoints.map((checkpoint) => ({
+    agent: "atlas-producer",
+    property: normalizeProperty(action.property),
+    channel,
+    claim: `Log ${checkpoint} results: ${title}`,
+    evidence: `Checkpoint reminder for manually fired rendition. Action: ${actionId}. Channel: ${channel}.`,
+    source_url: null,
+    confidence: 0.8,
+    tags: ["checkpoint", "producer", "manual-publish", checkpoint],
+    pinned: true,
+  }));
+
+  const { error: reminderError } = await atlasDb().from("findings").insert(reminderRows);
+  if (isMissingPinnedColumnError(reminderError)) {
+    const { error: retryError } = await atlasDb()
+      .from("findings")
+      .insert(reminderRows.map(({ pinned: _pinned, ...row }) => row));
+    if (retryError) throw retryError;
+  } else if (reminderError) {
+    throw reminderError;
+  }
+
+  return { actionId, channel, checkpointCount: checkpoints.length };
+}
+
 export async function logActionResult(
   actionId: string,
   operator: AtlasUser,
@@ -526,7 +746,7 @@ function buildCounts(rows: Array<{ property?: string | null; channel?: string | 
     properties: Object.fromEntries(properties.map((property) => [property, 0])),
     channels: Object.fromEntries(channels.map((channel) => [channel, 0])),
   } as {
-    properties: Record<AtlasPropertyFilter, number>;
+    properties: Record<string, number>;
     channels: Record<AtlasChannelFilter, number>;
   };
 
@@ -535,7 +755,7 @@ function buildCounts(rows: Array<{ property?: string | null; channel?: string | 
     const channel = normalizeChannel(row.channel);
     counts.properties.all += 1;
     counts.channels.all += 1;
-    if (property !== "all") counts.properties[property] += 1;
+    if (property !== "all") counts.properties[property] = (counts.properties[property] ?? 0) + 1;
     if (channel !== "all" && channel !== "general") counts.channels[channel] += 1;
   }
 
@@ -543,7 +763,8 @@ function buildCounts(rows: Array<{ property?: string | null; channel?: string | 
 }
 
 function normalizeProperty(value: string | null | undefined): AtlasPropertyFilter {
-  return properties.includes(value as AtlasPropertyFilter) ? (value as AtlasPropertyFilter) : "general";
+  const normalized = slugify(value ?? "");
+  return normalized || "general";
 }
 
 function normalizeChannel(value: string | null | undefined): AtlasChannelFilter | "general" {
@@ -565,4 +786,23 @@ function isMissingResultsChannelError(error: { code?: string; message?: string }
 
 function isMissingOperatorEmailError(error: { code?: string; message?: string } | null) {
   return error?.code === "42703" || Boolean(error?.message?.includes("operator_email"));
+}
+
+function isMissingPinnedColumnError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(error?.message?.includes("pinned"));
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+function normalizeColor(value: string | null | undefined) {
+  const color = value?.trim();
+  return color && /^#[0-9a-f]{6}$/i.test(color) ? color : null;
 }

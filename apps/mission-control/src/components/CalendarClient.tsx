@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useProperties } from "./FilterBar";
 
 type OperatorRole = "owner" | "curator" | "viewer";
 type CalendarCard = {
   id: string;
-  type: "action" | "asset";
+  type: "action" | "asset" | "rendition";
+  rendition_index?: number;
   title: string;
   property: string;
   channel: string;
@@ -28,6 +30,8 @@ export function CalendarClient({ userRole }: { userRole: OperatorRole }) {
   const [start, setStart] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
   const canSchedule = userRole === "owner" || userRole === "curator";
+  const properties = useProperties(false);
+  const propertyLabels = useMemo(() => new Map(properties.map((item) => [item.slug, item.display_name])), [properties]);
 
   async function load(nextStart = start) {
     setLoading(true);
@@ -58,7 +62,7 @@ export function CalendarClient({ userRole }: { userRole: OperatorRole }) {
     const response = await fetch("/api/calendar", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: card.type, id: card.id, scheduled_for: next || null }),
+      body: JSON.stringify({ type: card.type, id: card.id, rendition_index: card.rendition_index, scheduled_for: next || null }),
     });
     if (response.ok) await load(start);
   }
@@ -89,7 +93,7 @@ export function CalendarClient({ userRole }: { userRole: OperatorRole }) {
                       {cards.map((card) => (
                         <button className={`calendar-card ${card.type}`} type="button" key={`${card.type}:${card.id}`} onClick={() => schedule(card)}>
                           <strong>{card.title}</strong>
-                          <span>{card.property} / {card.status}</span>
+                          <span>{propertyLabels.get(card.property) ?? card.property} / {card.status}</span>
                           {card.results.map((result) => (
                             <small key={result.id}>{result.metric}: {result.value}</small>
                           ))}

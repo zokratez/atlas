@@ -93,6 +93,8 @@ type SpecimenRow = {
   mechanics: string[] | null;
   authenticity: "high" | "medium" | "low" | "unknown" | null;
   pattern_ids: string[] | null;
+  is_own?: boolean | null;
+  action_id?: string | null;
 };
 
 type AssetRow = {
@@ -104,8 +106,6 @@ type AssetRow = {
   duration_seconds: number | null;
   intended_channels: string[] | null;
 };
-
-const allowedProperties = new Set(["store", "huh", "restaurant", "general"]);
 
 async function recentFindings() {
   const { data, error } = await atlasDb()
@@ -389,15 +389,21 @@ async function linkSpecimensToPatterns() {
   if (isMissingPatternsError(patternsError)) return;
   if (patternsError) throw patternsError;
 
-  const { data: specimens, error: specimensError } = await atlasDb()
+  let specimensResult = await atlasDb()
     .from("specimens")
-    .select("id, observed_metrics, mechanics, authenticity, pattern_ids");
+    .select("id, observed_metrics, mechanics, authenticity, pattern_ids, is_own, action_id");
 
-  if (isMissingSpecimensError(specimensError)) return;
-  if (specimensError) throw specimensError;
+  if (isMissingOwnSpecimenColumnsError(specimensResult.error)) {
+    specimensResult = await atlasDb()
+      .from("specimens")
+      .select("id, observed_metrics, mechanics, authenticity, pattern_ids");
+  }
+
+  if (isMissingSpecimensError(specimensResult.error)) return;
+  if (specimensResult.error) throw specimensResult.error;
 
   const matchedByPattern = new Map<string, SpecimenRow[]>();
-  for (const specimen of (specimens ?? []) as SpecimenRow[]) {
+  for (const specimen of (specimensResult.data ?? []) as SpecimenRow[]) {
     const mechanicsText = (specimen.mechanics ?? []).join(" ").toLowerCase();
     const matchedPatternIds = (patterns ?? [])
       .filter((pattern) => pattern.name && mechanicsText.includes(String(pattern.name).toLowerCase().split(/\W+/)[0] ?? ""))
@@ -412,7 +418,7 @@ async function linkSpecimensToPatterns() {
       if (error) throw error;
     }
 
-    if (specimen.authenticity === "low") continue;
+    if (specimen.authenticity === "low" || specimen.is_own === true) continue;
     for (const patternId of nextPatternIds) {
       matchedByPattern.set(patternId, [...(matchedByPattern.get(patternId) ?? []), specimen]);
     }
@@ -524,6 +530,7 @@ async function runCadence(cadence: Cadence, governor: ModelGovernor) {
   }
 
   const sleepers = cadence === "weekly" ? await detectSleepers() : { risers: [], faders: [] };
+  const yoursVsMarket = cadence === "weekly" ? await buildYoursVsMarketContext() : null;
   if (cadence === "weekly") {
     await reweightRiserPatterns(sleepers.risers);
   }
@@ -557,6 +564,7 @@ async function runCadence(cadence: Cadence, governor: ModelGovernor) {
     costs: costsResult.data ?? [],
     findings: findingsResult.data ?? [],
     sleeper_detection: sleepers,
+    yours_vs_market: yoursVsMarket,
     receiptIds,
   });
 
@@ -710,6 +718,66 @@ async function reweightRiserPatterns(risers: SleeperSignal[]) {
   }
 }
 
+async function buildYoursVsMarketContext() {
+  let specimensResult = await atlasDb()
+    .from("specimens")
+    .select("id, property, channel, mechanics, observed_metrics, action_id, pattern_ids, dissection, is_own")
+    .eq("is_own", true)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (isMissingOwnSpecimenColumnsError(specimensResult.error) || isMissingSpecimensError(specimensResult.error)) {
+    return { own_specimens: [], own_results: [], validated_patterns: [], notes: ["own specimen columns not live yet"] };
+  }
+  if (specimensResult.error) throw specimensResult.error;
+
+  const ownSpecimens = (specimensResult.data ?? []) as Array<SpecimenRow & {
+    property?: string;
+    channel?: string | null;
+    dissection?: string | null;
+  }>;
+  const actionIds = Array.from(new Set(ownSpecimens.map((specimen) => specimen.action_id).filter(Boolean))) as string[];
+  const patternIds = Array.from(new Set(ownSpecimens.flatMap((specimen) => specimen.pattern_ids ?? [])));
+
+  const [resultsResult, patternsResult] = await Promise.all([
+    actionIds.length > 0
+      ? atlasDb().from("results").select("id, property, channel, metric, value, raw, created_at").eq("source", "manual").in("raw->>action_id", actionIds).limit(60)
+      : Promise.resolve({ data: [], error: null }),
+    atlasDb().from("patterns").select("id, property, channel, name, description, support_count, status, source_finding_ids").in("status", ["validated", "emerging"]).limit(40),
+  ]);
+
+  if (resultsResult.error) throw resultsResult.error;
+  if (patternsResult.error && !isMissingPatternsError(patternsResult.error)) throw patternsResult.error;
+
+  const marketPatterns = ((patternsResult.data ?? []) as PatternRow[])
+    .filter((pattern) => pattern.status === "validated" || patternIds.includes(pattern.id))
+    .sort((a, b) => b.support_count - a.support_count)
+    .slice(0, 12);
+
+  return {
+    own_specimens: ownSpecimens.map((specimen) => ({
+      id: specimen.id,
+      action_id: specimen.action_id,
+      property: specimen.property,
+      channel: specimen.channel,
+      mechanics: specimen.mechanics ?? [],
+      observed_metrics: specimen.observed_metrics,
+      pattern_ids: specimen.pattern_ids ?? [],
+      dissection: specimen.dissection,
+    })),
+    own_results: resultsResult.data ?? [],
+    validated_patterns: marketPatterns.map((pattern) => ({
+      id: pattern.id,
+      property: pattern.property,
+      channel: pattern.channel,
+      name: pattern.name,
+      support_count: pattern.support_count,
+      description: pattern.description,
+      source_finding_ids: pattern.source_finding_ids ?? [],
+    })),
+  };
+}
+
 function cadencePrompt(cadence: Cadence, context: Record<string, unknown>) {
   if (cadence === "quarterly") {
     return `Write a skeleton reminder finding: "quarterly review due: strategy doc vs results." Include why the human ritual matters, in one paragraph. Context: ${JSON.stringify(context, null, 2)}`;
@@ -717,7 +785,7 @@ function cadencePrompt(cadence: Cadence, context: Record<string, unknown>) {
   if (cadence === "monthly") {
     return `Write the monthly Atlas rhythm finding. Cover pattern lifecycle audit, experiment verdicts due, config-target suggestions based on kept content. Suggest only, never self-apply. Context: ${JSON.stringify(context, null, 2)}`;
   }
-  return `Write "The Week" as one pinned Atlas finding: patterns risen/fallen, sleeper risers (late momentum) and faders (decay), best/worst published post by logged results, kill-reason trends, cost summary, and exactly ONE suggested tweak. Note that risers count more because they survived algorithm decay. Suggest only, never self-apply. Context: ${JSON.stringify(context, null, 2)}`;
+  return `Write "The Week" as one pinned Atlas finding: patterns risen/fallen, sleeper risers (late momentum) and faders (decay), best/worst published post by logged results, kill-reason trends, cost summary, and exactly ONE suggested tweak. Include a section called "Yours vs the market" comparing Sam's own posts' mechanics/results against validated market patterns. Give 1-3 concrete improvement notes with receipts, e.g. "your hook ran 6s; validated pattern: <2s - seen 9x." Note that risers count more because they survived algorithm decay. Suggest only, never self-apply. Context: ${JSON.stringify(context, null, 2)}`;
 }
 
 function cadenceTitle(cadence: Cadence) {
@@ -746,10 +814,20 @@ async function parseLensResponse(text: string, governor: ModelGovernor) {
 }
 
 function normalizeProperty(property: string | null | undefined, tags: string[] | null | undefined) {
-  if (property && allowedProperties.has(property)) return property;
+  if (property && slugify(property)) return slugify(property);
   if (tags?.some((tag) => tag.includes("huh") || tag.includes("language"))) return "huh";
   if (tags?.some((tag) => tag.includes("store") || tag.includes("peptide"))) return "store";
   return "general";
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }
 
 function nextStatus(current: PatternStatus, supportCount: number): PatternStatus {
@@ -806,6 +884,10 @@ function isMissingChannelError(error: { code?: string; message?: string } | null
 
 function isMissingSpecimensError(error: { code?: string; message?: string } | null) {
   return error?.code === "42P01" || Boolean(error?.message?.includes("specimens"));
+}
+
+function isMissingOwnSpecimenColumnsError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(error?.message?.includes("is_own") || error?.message?.includes("action_id"));
 }
 
 function isMissingAssetsError(error: { code?: string; message?: string } | null) {

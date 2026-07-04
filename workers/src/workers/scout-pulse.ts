@@ -33,7 +33,7 @@ Rules:
 - Max ${maxFindings} findings total.
 - Each object must include: property, claim, evidence, source_url, confidence, tags.
 - Include channel. Pulse defaults to "x" unless the finding is clearly about another channel.
-- property must be one of: store, huh, restaurant, general.
+- property must be a configured slug such as store, huh, restaurant, general, or another Atlas property.
 - Use property "huh" for language-app marketing. Use property "general" for peptide-adjacent DTC and channel tactics.
 - evidence should name the live discussion pattern and cite enough context to audit the claim.
 - source_url should be a cited X/search URL when available, otherwise the most relevant public source URL.
@@ -46,15 +46,24 @@ ${JSON.stringify(targets, null, 2)}`;
 }
 
 function normalizeProperty(finding: PulseFinding) {
-  if (["store", "huh", "restaurant", "general"].includes(finding.property)) {
-    return finding.property;
-  }
+  const slug = slugify(finding.property);
+  if (slug) return slug;
 
   if (finding.tags?.some((tag) => tag.includes("huh") || tag.includes("language"))) {
     return "huh";
   }
 
   return "general";
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }
 
 async function insertPulseFindings(findings: PulseFinding[]) {

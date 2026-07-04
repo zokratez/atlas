@@ -1,12 +1,40 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useProperties } from "./FilterBar";
 
 type SubmitState = "idle" | "submitting" | "sent" | "error";
 
 type UploadResult = {
   ok: boolean;
   error: string;
+};
+
+type DropHistoryItem = {
+  id: string;
+  created_at: string;
+  kind: "url" | "text" | "file";
+  content: string;
+  property: string | null;
+  status: "new" | "processed" | "failed";
+  notes: string | null;
+  source_chars?: number | null;
+  analyzed_chars?: number | null;
+  coverage_pct?: number | null;
+  coverage_method?: string | null;
+  findings: Array<{
+    id: string;
+    claim: string;
+    property: string;
+    channel?: string | null;
+    source_url?: string | null;
+    intake_coverage?: {
+      source_chars?: number;
+      analyzed_chars?: number;
+      coverage_pct?: number;
+      method?: string;
+    } | null;
+  }>;
 };
 
 export function DropClient() {
@@ -18,6 +46,34 @@ export function DropClient() {
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
   const [progress, setProgress] = useState("");
+  const [history, setHistory] = useState<DropHistoryItem[]>([]);
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const properties = useProperties(false);
+  const propertyLabels = useMemo(() => new Map(properties.map((item) => [item.slug, item.display_name])), [properties]);
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  useEffect(() => {
+    function onPaste(event: ClipboardEvent) {
+      const pastedFiles = Array.from(event.clipboardData?.files ?? []);
+      if (pastedFiles.length === 0) return;
+      event.preventDefault();
+      chooseFiles(fileListFromFiles(pastedFiles));
+    }
+
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
+
+  async function loadHistory() {
+    const response = await fetch("/api/intake");
+    if (!response.ok) return;
+    const payload = await response.json();
+    setHistory(payload.history ?? []);
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -57,6 +113,7 @@ export function DropClient() {
     setFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (cameraInputRef.current) cameraInputRef.current.value = "";
+    await loadHistory();
   }
 
   async function chooseFiles(fileList: FileList | null) {
@@ -131,6 +188,21 @@ export function DropClient() {
     return { ok: true, error: "" };
   }
 
+  async function studyFully(item: DropHistoryItem) {
+    setMessage("");
+    const sourceChars = Number(item.source_chars ?? 0);
+    const analyzedChars = Number(item.analyzed_chars ?? 0);
+    const remaining = Math.max(0, sourceChars - analyzedChars);
+    const chunks = Math.max(1, Math.ceil(remaining / 12000));
+    const estimatedUsd = (chunks * 0.01).toFixed(4);
+    if (!window.confirm(`Study the rest in ${chunks} governed chunks? Estimated model cost about $${estimatedUsd}.`)) return;
+
+    const response = await fetch(`/api/intake/${item.id}/study-full`, { method: "POST" });
+    const payload = await response.json().catch(() => ({}));
+    setMessage(response.ok ? String(payload.note ?? "Queued full study.") : String(payload.error ?? "Study fully failed."));
+    await loadHistory();
+  }
+
   function readyLabel() {
     if (files.length === 0) return null;
     if (files.length === 1) return `Ready: ${files[0].name}`;
@@ -146,7 +218,20 @@ export function DropClient() {
         </div>
       </div>
 
-      <form className="drop-form panel" onSubmit={submit}>
+      <form
+        className={`drop-form panel drop-zone ${dragging ? "dragging" : ""}`}
+        onSubmit={submit}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          chooseFiles(event.dataTransfer.files);
+        }}
+      >
         <label htmlFor="drop-content">Paste URL or text</label>
         <textarea
           id="drop-content"
@@ -159,10 +244,9 @@ export function DropClient() {
         <label htmlFor="drop-property">Property</label>
         <select id="drop-property" value={property} onChange={(event) => setProperty(event.target.value)}>
           <option value="">Auto</option>
-          <option value="store">Store</option>
-          <option value="huh">Huh</option>
-          <option value="restaurant">Restaurant</option>
-          <option value="general">General</option>
+          {properties.map((item) => (
+            <option value={item.slug} key={item.slug}>{item.display_name}</option>
+          ))}
         </select>
 
         <label htmlFor="drop-file">File or photo</label>
@@ -194,6 +278,73 @@ export function DropClient() {
 
         {message ? <p className={`form-message ${state === "error" ? "error" : "sent"}`}>{message}</p> : null}
       </form>
+
+      <section className="dense-stack">
+        <div className="view-heading">
+          <div>
+            <p className="eyebrow">History</p>
+            <h2>Drops</h2>
+          </div>
+          <span className="counter">{history.length}</span>
+        </div>
+        {history.length === 0 ? <div className="empty-state">Your drops show up here after submit.</div> : null}
+        {history.map((item) => (
+          <article
+            className={`panel dense-card ${expandedHistoryId === item.id ? "expanded" : ""}`}
+            key={item.id}
+            onClick={() => setExpandedHistoryId(expandedHistoryId === item.id ? null : item.id)}
+          >
+            <div className="card-line">
+              <div className="micro-badges">
+                <span>{item.property ? propertyLabels.get(item.property) ?? item.property : "auto"}</span>
+                <span>{item.kind}</span>
+              </div>
+              <strong>{historyTitle(item)}</strong>
+              <span>{item.status}</span>
+            </div>
+            {expandedHistoryId === item.id ? (
+              <div className="card-expanded">
+                {item.notes ? <p className="note">{item.notes}</p> : null}
+                <p className="note">{coverageLabel(item)}</p>
+                <div className="tag-row">
+                  <span className="chip">{formatDate(item.created_at)}</span>
+                  <span className="chip">{item.findings.length} findings</span>
+                  {item.coverage_method ? <span className="chip">{item.coverage_method}</span> : null}
+                </div>
+                {Number(item.coverage_pct ?? 100) < 100 ? (
+                  <button type="button" onClick={(event) => {
+                    event.stopPropagation();
+                    studyFully(item);
+                  }}>
+                    Study fully
+                  </button>
+                ) : null}
+                <div className="receipt-list">
+                  {item.findings.map((finding) => (
+                    <a
+                      href={finding.source_url ?? "/feed"}
+                      target={finding.source_url ? "_blank" : "_self"}
+                      rel="noreferrer"
+                      className="panel dense-card"
+                      key={finding.id}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="card-line">
+                        <div className="micro-badges">
+                          <span>{propertyLabels.get(finding.property) ?? finding.property}</span>
+                          <span>{finding.channel ?? "general"}</span>
+                        </div>
+                        <strong>{finding.claim}</strong>
+                        <span>{coverageLabel(finding.intake_coverage)}</span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </section>
     </section>
   );
 }
@@ -242,4 +393,35 @@ function loadImage(file: File) {
     };
     image.src = url;
   });
+}
+
+function fileListFromFiles(files: File[]) {
+  const transfer = new DataTransfer();
+  for (const file of files) transfer.items.add(file);
+  return transfer.files;
+}
+
+function historyTitle(item: DropHistoryItem) {
+  if (item.kind === "file") return item.content.split("/").pop() ?? "File";
+  return item.content.length > 84 ? `${item.content.slice(0, 84)}...` : item.content;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+function coverageLabel(value: {
+  source_chars?: number | null;
+  analyzed_chars?: number | null;
+  coverage_pct?: number | null;
+  coverage_method?: string | null;
+  method?: string | null;
+} | null | undefined) {
+  const pct = Number(value?.coverage_pct ?? 100);
+  const sourceChars = Number(value?.source_chars ?? 0);
+  const words = Math.max(0, Math.round(sourceChars / 5));
+  const method = value?.coverage_method ?? value?.method ?? "full_text";
+  if (!Number.isFinite(pct)) return "Studied: pending";
+  if (pct >= 100) return `Studied: 100% of ${method.replace("_", " ")} (${words.toLocaleString()} words)`;
+  return `Studied: ${pct}% - truncated at token budget.`;
 }

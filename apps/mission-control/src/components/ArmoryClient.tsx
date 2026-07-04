@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useProperties } from "./FilterBar";
 
 type Asset = {
   id: string;
@@ -53,6 +54,8 @@ export function ArmoryClient() {
   const [channels, setChannels] = useState("tiktok, instagram, youtube");
   const [duration, setDuration] = useState("");
   const [notes, setNotes] = useState("");
+  const properties = useProperties(false);
+  const propertyLabels = useMemo(() => new Map(properties.map((item) => [item.slug, item.display_name])), [properties]);
 
   async function load() {
     setLoading(true);
@@ -170,10 +173,9 @@ export function ArmoryClient() {
 
         <label htmlFor="asset-property">Property</label>
         <select id="asset-property" value={property} onChange={(event) => setProperty(event.target.value)}>
-          <option value="store">Store</option>
-          <option value="huh">Huh?</option>
-          <option value="restaurant">Restaurant</option>
-          <option value="general">General</option>
+          {properties.map((item) => (
+            <option value={item.slug} key={item.slug}>{item.display_name}</option>
+          ))}
         </select>
 
         <label htmlFor="asset-channels">Intended channels</label>
@@ -205,7 +207,7 @@ export function ArmoryClient() {
           <article className="panel dense-card expanded" key={asset.id}>
             <div className="card-line">
               <div className="micro-badges">
-                <span>{asset.property}</span>
+                <span>{propertyLabels.get(asset.property) ?? asset.property}</span>
                 <span>{asset.kind}</span>
               </div>
               <strong>{asset.title}</strong>

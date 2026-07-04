@@ -11,6 +11,7 @@ type IntakeRow = {
   kind: "url" | "text" | "file";
   content: string;
   property: string | null;
+  notes?: string | null;
 };
 
 type IntakeFinding = {
@@ -22,6 +23,13 @@ type IntakeFinding = {
   tags: string[];
   channel?: string;
   specimen?: SpecimenDraft;
+};
+
+type IntakeCoverage = {
+  source_chars: number;
+  analyzed_chars: number;
+  coverage_pct: number;
+  method: "full_text" | "truncated" | "transcript" | "transcript_partial" | "vision" | "metadata_only";
 };
 
 type SpecimenDraft = {
@@ -47,8 +55,6 @@ type SpecimenDraft = {
   authenticity_reason?: string | null;
 };
 
-const allowedProperties = new Set(["store", "huh", "restaurant", "general"]);
-
 export async function processIntakeRows(
   governor: ModelGovernor,
   pulseGovernor: ModelGovernor,
@@ -60,7 +66,7 @@ export async function processIntakeRows(
 
   const { data, error } = await atlasDb()
     .from("intake")
-    .select("id, kind, content, property")
+    .select("id, kind, content, property, notes")
     .eq("status", "new")
     .order("created_at", { ascending: true })
     .limit(10);
@@ -75,6 +81,7 @@ export async function processIntakeRows(
     try {
       const source = await loadIntakeSource(row);
       const maxFindings = Math.min(3, remainingCap - insertedCount);
+      const coverage = coverageForSource(source);
       const prompt = source.kind === "x-url"
         ? buildXUrlPrompt(row, maxFindings)
         : source.image
@@ -128,24 +135,40 @@ export async function processIntakeRows(
             ...(source.image ? ["photo"] : []),
             ...(source.kind === "x-url" ? ["pulse", "x"] : []),
           ])),
+          intake_coverage: coverage,
         }));
 
+      let insertedFindingIds: string[] = [];
       if (findings.length > 0) {
-        const { error: insertError } = await atlasDb().from("findings").insert(findings);
+        const { data: inserted, error: insertError } = await atlasDb()
+          .from("findings")
+          .insert(findings)
+          .select("id");
         if (isMissingChannelError(insertError)) {
-          const { error: retryError } = await atlasDb()
+          const { data: retryInserted, error: retryError } = await atlasDb()
             .from("findings")
-            .insert(findings.map(({ channel: _channel, ...finding }) => finding));
+            .insert(findings.map(({ channel: _channel, ...finding }) => finding))
+            .select("id");
           if (retryError) throw retryError;
+          insertedFindingIds = (retryInserted ?? []).map((finding) => finding.id);
+        } else if (isMissingCoverageError(insertError)) {
+          const { data: retryInserted, error: retryError } = await atlasDb()
+            .from("findings")
+            .insert(findings.map(({ intake_coverage: _coverage, ...finding }) => finding))
+            .select("id");
+          if (retryError) throw retryError;
+          insertedFindingIds = (retryInserted ?? []).map((finding) => finding.id);
         } else if (insertError) {
           throw insertError;
+        } else {
+          insertedFindingIds = (inserted ?? []).map((finding) => finding.id);
         }
       }
 
       await insertSpecimens(row, source, findings);
 
       insertedCount += findings.length;
-      await markIntake(row.id, "processed", `created ${findings.length} findings`);
+      await markIntake(row.id, "processed", `created ${findings.length} findings`, insertedFindingIds, coverage);
     } catch (error) {
       if (error instanceof GovernorStop) throw error;
 
@@ -264,15 +287,39 @@ ${JSON.stringify(
 )}`;
 }
 
-async function markIntake(id: string, status: "processed" | "failed", notes: string) {
+async function markIntake(
+  id: string,
+  status: "processed" | "failed",
+  notes: string,
+  findingIds: string[] = [],
+  coverage?: IntakeCoverage,
+) {
   const { error } = await atlasDb()
     .from("intake")
     .update({
       status,
       processed_at: new Date().toISOString(),
       notes,
+      finding_ids: findingIds,
+      source_chars: coverage?.source_chars ?? null,
+      analyzed_chars: coverage?.analyzed_chars ?? null,
+      coverage_pct: coverage?.coverage_pct ?? null,
+      coverage_method: coverage?.method ?? null,
     })
     .eq("id", id);
+
+  if (isMissingFindingIdsError(error)) {
+    const { error: retryError } = await atlasDb()
+      .from("intake")
+      .update({
+        status,
+        processed_at: new Date().toISOString(),
+        notes,
+      })
+      .eq("id", id);
+    if (retryError) throw retryError;
+    return;
+  }
 
   if (error) throw error;
 }
@@ -284,19 +331,24 @@ async function insertSpecimens(row: IntakeRow, source: LoadedSource, findings: I
 
   if (specimens.length === 0) return;
 
-  const rows = specimens.slice(0, 1).map((specimen) => {
+  const isOwn = isOwnPostDrop(row);
+  const rows = [];
+  for (const specimen of specimens.slice(0, 1)) {
     const metrics = normalizeMetrics(specimen.observed_metrics);
     const ratios = specimen.engagement_ratios ?? computeEngagementRatios(metrics);
-    return {
+    const property = normalizeProperty(row.property ?? specimen.property, null);
+    const channel = inferChannel({
+      channel: source.kind === "x-url" ? "x" : specimen.channel,
+      sourceUrl: row.kind === "url" ? row.content : specimen.post_url ?? source.sourceUrl,
+      text: `${specimen.format ?? ""} ${(specimen.mechanics ?? []).join(" ")} ${specimen.dissection ?? ""}`,
+    });
+    const actionId = isOwn ? await findMatchingOwnAction(property, channel, specimen, row) : null;
+    rows.push({
       platform: specimen.platform ?? inferPlatform(row.content),
       account_handle: specimen.account_handle ?? null,
       post_url: row.kind === "url" ? row.content : specimen.post_url ?? source.sourceUrl,
-      property: normalizeProperty(row.property ?? specimen.property, null),
-      channel: inferChannel({
-        channel: source.kind === "x-url" ? "x" : specimen.channel,
-        sourceUrl: row.kind === "url" ? row.content : specimen.post_url ?? source.sourceUrl,
-        text: `${specimen.format ?? ""} ${(specimen.mechanics ?? []).join(" ")} ${specimen.dissection ?? ""}`,
-      }),
+      property,
+      channel,
       format: specimen.format ?? null,
       observed_metrics: metrics,
       observed_at: specimen.observed_at ?? new Date().toISOString(),
@@ -308,11 +360,20 @@ async function insertSpecimens(row: IntakeRow, source: LoadedSource, findings: I
       authenticity_reason: specimen.authenticity_reason ?? "Heuristic only: ratios flag anomalies; they do not prove purchase.",
       intake_id: row.id,
       pattern_ids: [],
-    };
-  });
+      is_own: isOwn,
+      action_id: actionId,
+    });
+  }
 
   const { error } = await atlasDb().from("specimens").insert(rows);
   if (isMissingSpecimensError(error)) return;
+  if (isMissingOwnSpecimenColumnsError(error)) {
+    const fallbackRows = rows.map(({ is_own: _isOwn, action_id: _actionId, ...fallback }) => fallback);
+    const { error: retryError } = await atlasDb().from("specimens").insert(fallbackRows);
+    if (isMissingSpecimensError(retryError)) return;
+    if (retryError) throw retryError;
+    return;
+  }
   if (error) throw error;
 }
 
@@ -320,6 +381,8 @@ type LoadedSource = {
   kind: "text" | "image" | "x-url";
   text: string;
   sourceUrl: string | null;
+  method: IntakeCoverage["method"];
+  analyzedText?: string;
   image?: {
     mediaType: "image/jpeg" | "image/png" | "image/webp";
     data: string;
@@ -328,7 +391,7 @@ type LoadedSource = {
 
 async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
   if (row.kind === "text") {
-    return { kind: "text", text: row.content, sourceUrl: null };
+    return textSource(row.content, null, "full_text");
   }
 
   if (row.kind === "url") {
@@ -337,11 +400,11 @@ async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
     }
 
     if (isXUrl(row.content)) {
-      return { kind: "x-url", text: row.content, sourceUrl: row.content };
+      return { kind: "x-url", text: row.content, sourceUrl: row.content, method: "metadata_only", analyzedText: row.content };
     }
 
     if (isYouTubeUrl(row.content)) {
-      return { kind: "text", text: await loadYouTubeTranscript(row.content), sourceUrl: row.content };
+      return textSource(await loadYouTubeTranscript(row.content), row.content, "transcript");
     }
 
     if (isTikTokUrl(row.content)) {
@@ -353,6 +416,8 @@ async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
       kind: "text",
       text: [snapshot.title, snapshot.excerpt].filter(Boolean).join("\n\n"),
       sourceUrl: row.content,
+      method: "metadata_only",
+      analyzedText: [snapshot.title, snapshot.excerpt].filter(Boolean).join("\n\n"),
     };
   }
 
@@ -367,6 +432,8 @@ async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
       kind: "image",
       text: "Photo intake file.",
       sourceUrl: row.content,
+      method: "vision",
+      analyzedText: "Photo intake file.",
       image: {
         mediaType: imageMediaType(extension),
         data: buffer.toString("base64"),
@@ -378,10 +445,35 @@ async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
     const parser = new PDFParse({ data: buffer });
     const parsed = await parser.getText();
     await parser.destroy();
-    return { kind: "text", text: parsed.text, sourceUrl: row.content };
+    return textSource(parsed.text, row.content, "full_text");
   }
 
-  return { kind: "text", text: buffer.toString("utf8"), sourceUrl: row.content };
+  return textSource(buffer.toString("utf8"), row.content, "full_text");
+}
+
+function textSource(text: string, sourceUrl: string | null, baseMethod: IntakeCoverage["method"]): LoadedSource {
+  const analyzedText = text.slice(0, 12000);
+  const truncated = analyzedText.length < text.length;
+  const method = truncated
+    ? baseMethod === "transcript" ? "transcript_partial" : "truncated"
+    : baseMethod;
+  return { kind: "text", text, sourceUrl, method, analyzedText };
+}
+
+function coverageForSource(source: LoadedSource): IntakeCoverage {
+  const sourceChars = source.image ? source.text.length : source.text.length;
+  const analyzedChars = source.image ? source.text.length : (source.analyzedText ?? source.text).length;
+  const pct = source.method === "vision"
+    ? 100
+    : sourceChars > 0
+    ? Math.min(100, Math.round((analyzedChars / sourceChars) * 100))
+    : 100;
+  return {
+    source_chars: sourceChars,
+    analyzed_chars: analyzedChars,
+    coverage_pct: pct,
+    method: source.method,
+  };
 }
 
 function isImageExtension(extension: string | undefined) {
@@ -394,6 +486,51 @@ function isMissingChannelError(error: { code?: string; message?: string } | null
 
 function isMissingSpecimensError(error: { code?: string; message?: string } | null) {
   return error?.code === "42P01" || Boolean(error?.message?.includes("specimens"));
+}
+
+function isMissingFindingIdsError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(
+    error?.message?.includes("finding_ids") ||
+    error?.message?.includes("source_chars") ||
+    error?.message?.includes("analyzed_chars") ||
+    error?.message?.includes("coverage_pct") ||
+    error?.message?.includes("coverage_method")
+  );
+}
+
+function isMissingOwnSpecimenColumnsError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(error?.message?.includes("is_own") || error?.message?.includes("action_id"));
+}
+
+function isMissingCoverageError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(error?.message?.includes("intake_coverage"));
+}
+
+function isOwnPostDrop(row: IntakeRow) {
+  return /\bMY POST\b/i.test(`${row.content}\n${row.notes ?? ""}`);
+}
+
+async function findMatchingOwnAction(property: string, channel: string, specimen: SpecimenDraft, row: IntakeRow) {
+  const { data, error } = await atlasDb()
+    .from("actions")
+    .select("id, payload, decided_at, created_at")
+    .eq("agent", "sam-manual")
+    .eq("status", "published")
+    .eq("property", property)
+    .eq("channel", channel)
+    .order("decided_at", { ascending: false })
+    .limit(10);
+
+  if (error) return null;
+  const handle = specimen.account_handle?.toLowerCase();
+  const text = row.content.toLowerCase();
+  const matched = (data ?? []).find((action) => {
+    const payload = action.payload as { caption?: string; title?: string } | null;
+    const caption = `${payload?.caption ?? ""} ${payload?.title ?? ""}`.toLowerCase();
+    return Boolean((handle && caption.includes(handle)) || caption.includes(text.slice(0, 48)));
+  });
+
+  return matched?.id ?? data?.[0]?.id ?? null;
 }
 
 function normalizeMetrics(metrics: SpecimenDraft["observed_metrics"]) {
@@ -450,10 +587,20 @@ function imageMediaType(extension: string | undefined): "image/jpeg" | "image/pn
 }
 
 function normalizeProperty(property: string | null | undefined, tags: string[] | null | undefined) {
-  if (property && allowedProperties.has(property)) return property;
+  if (property && slugify(property)) return slugify(property);
   if (tags?.some((tag) => tag.includes("huh") || tag.includes("language"))) return "huh";
   if (tags?.some((tag) => tag.includes("store") || tag.includes("peptide"))) return "store";
   return "general";
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }
 
 function isYouTubeUrl(value: string) {

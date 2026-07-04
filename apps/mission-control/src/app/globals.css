@@ -954,6 +954,19 @@ a {
   min-height: 44px;
 }
 
+.drop-zone {
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.drop-zone.dragging {
+  border-color: var(--green);
+  background: rgba(99, 211, 142, 0.08);
+}
+
+.settings-subheading {
+  margin-top: 28px;
+}
+
 .video-dissection-box {
   display: grid;
   gap: 8px;

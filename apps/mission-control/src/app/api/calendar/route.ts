@@ -37,17 +37,38 @@ export async function GET(request: NextRequest) {
   if (resultsResult.error) return NextResponse.json({ error: resultsResult.error.message }, { status: 500 });
 
   const resultsByAction = groupResults(resultsResult.data ?? []);
-  const actionCards = (actionsResult.data ?? []).map((action) => ({
-    id: action.id,
-    type: "action",
-    title: titleForAction(action.payload, action.kind),
-    property: action.property,
-    channel: normalizeChannel(action.channel),
-    status: action.status,
-    scheduled_for: action.scheduled_for,
-    day: dayKey(action.scheduled_for ?? action.decided_at ?? action.created_at),
-    results: resultsByAction.get(action.id) ?? [],
-  }));
+  const actionCards = (actionsResult.data ?? []).flatMap((action) => {
+    const renditions = Array.isArray(action.payload?.renditions) ? action.payload.renditions as Array<Record<string, unknown>> : [];
+    if (renditions.length > 0) {
+      return renditions.map((rendition, index) => {
+        const scheduled = typeof rendition.scheduled_for === "string" ? rendition.scheduled_for : action.scheduled_for;
+        return {
+          id: action.id,
+          type: "rendition",
+          rendition_index: index,
+          title: String(rendition.title ?? titleForAction(action.payload, action.kind)),
+          property: action.property,
+          channel: normalizeChannel(String(rendition.channel ?? action.channel ?? "general")),
+          status: action.status,
+          scheduled_for: scheduled,
+          day: dayKey(scheduled ?? action.decided_at ?? action.created_at),
+          results: resultsByAction.get(action.id) ?? [],
+        };
+      });
+    }
+
+    return [{
+      id: action.id,
+      type: "action",
+      title: titleForAction(action.payload, action.kind),
+      property: action.property,
+      channel: normalizeChannel(action.channel),
+      status: action.status,
+      scheduled_for: action.scheduled_for,
+      day: dayKey(action.scheduled_for ?? action.decided_at ?? action.created_at),
+      results: resultsByAction.get(action.id) ?? [],
+    }];
+  });
 
   const assetCards = (assetsResult.data ?? [])
     .filter((asset) => asset.status === "shelf" || asset.status === "scheduled")
@@ -84,17 +105,45 @@ export async function PUT(request: NextRequest) {
   if (user instanceof NextResponse) return user;
 
   const body = (await request.json().catch(() => ({}))) as {
-    type?: "action" | "asset";
+    type?: "action" | "asset" | "rendition";
     id?: string;
+    rendition_index?: number;
     scheduled_for?: string | null;
   };
 
-  if (!body.id || (body.type !== "action" && body.type !== "asset")) {
+  if (!body.id || (body.type !== "action" && body.type !== "asset" && body.type !== "rendition")) {
     return NextResponse.json({ error: "type and id required." }, { status: 400 });
   }
   const scheduledFor = body.scheduled_for ? new Date(body.scheduled_for) : null;
   if (scheduledFor && Number.isNaN(scheduledFor.getTime())) {
     return NextResponse.json({ error: "Invalid scheduled_for." }, { status: 400 });
+  }
+
+  if (body.type === "rendition") {
+    const { data: action, error: fetchError } = await atlasDb()
+      .from("actions")
+      .select("payload")
+      .eq("id", body.id)
+      .single();
+
+    if (fetchError) return NextResponse.json({ error: fetchError.message }, { status: 500 });
+    const payload = (action.payload ?? {}) as Record<string, unknown>;
+    const renditions = Array.isArray(payload.renditions) ? [...payload.renditions as Array<Record<string, unknown>>] : [];
+    const index = Number(body.rendition_index ?? -1);
+    if (!Number.isInteger(index) || !renditions[index]) {
+      return NextResponse.json({ error: "rendition_index required." }, { status: 400 });
+    }
+    renditions[index] = {
+      ...renditions[index],
+      scheduled_for: scheduledFor ? scheduledFor.toISOString() : null,
+    };
+    const nextScheduled = renditions.find((rendition) => typeof rendition.scheduled_for === "string")?.scheduled_for ?? null;
+    const { error } = await atlasDb()
+      .from("actions")
+      .update({ payload: { ...payload, renditions }, scheduled_for: nextScheduled })
+      .eq("id", body.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
   }
 
   const table = body.type === "action" ? "actions" : "assets";
