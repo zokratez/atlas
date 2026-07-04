@@ -4,6 +4,7 @@ import { atlasDb } from "../lib/db.js";
 import { GovernorStop, ModelGovernor } from "../lib/governor.js";
 import { parseJsonObject } from "../lib/json.js";
 import { createProvider } from "../lib/provider.js";
+import { isDirectRun } from "../lib/env.js";
 
 type PatternStatus = "emerging" | "validated" | "fading" | "busted";
 
@@ -927,11 +928,13 @@ function formatNote(asset: AssetRow) {
   return "open with the problem; keep one idea per post";
 }
 
-main().catch((error: unknown) => {
-  if (error instanceof GovernorStop) {
-    console.log(`atlas-lens stopped by governor: ${error.message}`);
-    return;
-  }
-  console.error(error);
-  process.exit(1);
-});
+if (isDirectRun(import.meta.url)) {
+  main().catch((error: unknown) => {
+    if (error instanceof GovernorStop) {
+      console.log(`atlas-lens stopped by governor: ${error.message}`);
+      return;
+    }
+    console.error(error);
+    process.exit(1);
+  });
+}

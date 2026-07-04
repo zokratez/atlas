@@ -75,6 +75,7 @@ export function QueueClient() {
   const [registerCaption, setRegisterCaption] = useState("");
   const [registerScreenshot, setRegisterScreenshot] = useState<File | null>(null);
   const [registerMessage, setRegisterMessage] = useState("");
+  const [runMessage, setRunMessage] = useState("");
   const properties = useProperties(false);
   const propertyLabels = useMemo(() => new Map(properties.map((property) => [property.slug, property.display_name])), [properties]);
 
@@ -208,6 +209,16 @@ export function QueueClient() {
     setBusyId(null);
   }
 
+  async function queueDraftNow() {
+    setRunMessage("");
+    const response = await fetch("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ worker: "quill" }),
+    });
+    setRunMessage(response.ok ? "Queued, runs within a minute." : "Could not queue Quill.");
+  }
+
   return (
     <section className={`view density-${density}`}>
       <div className="view-heading">
@@ -231,8 +242,10 @@ export function QueueClient() {
         ))}
         <button className={density === "compact" ? "active" : ""} type="button" onClick={() => setStoredDensity("compact")}>Compact</button>
         <button className={density === "comfortable" ? "active" : ""} type="button" onClick={() => setStoredDensity("comfortable")}>Comfortable</button>
+        <button type="button" onClick={queueDraftNow}>Draft now</button>
         <FilterBar filters={filters} counts={counts} onChange={setFilters} />
       </div>
+      {runMessage ? <p className="form-message sent">{runMessage}</p> : null}
 
       {status === "published" ? (
         <div className="button-row">

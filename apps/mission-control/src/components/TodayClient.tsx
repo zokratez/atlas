@@ -23,6 +23,7 @@ export function TodayClient({ userRole }: { userRole: OperatorRole }) {
   const { focusProperty, setFocusProperty, ready: focusReady } = useFocusProperty();
   const [summary, setSummary] = useState<TodaySummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [runMessage, setRunMessage] = useState("");
   const propertyLabels = useMemo(() => new Map(properties.map((property) => [property.slug, property.display_name])), [properties]);
   const focusLabel = propertyLabels.get(focusProperty) ?? focusProperty;
 
@@ -38,6 +39,16 @@ export function TodayClient({ userRole }: { userRole: OperatorRole }) {
   function go(path: string, filters = { property: focusProperty, channel: "all" }) {
     window.localStorage.setItem(filterStorageKey, JSON.stringify(filters));
     router.push(path);
+  }
+
+  async function queueRun(worker: "scout" | "lens" | "quill") {
+    setRunMessage("");
+    const response = await fetch("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ worker }),
+    });
+    setRunMessage(response.ok ? "Queued, runs within a minute." : "Could not queue run.");
   }
 
   const tasks = summary ? [
@@ -79,6 +90,7 @@ export function TodayClient({ userRole }: { userRole: OperatorRole }) {
 
       <div className="focus-strip">
         <span className="chip focus-chip">Focus: {focusLabel}</span>
+        <button type="button" onClick={() => queueRun("scout")}>Hunt now</button>
         {userRole === "owner" ? (
           <select
             value={focusProperty}
@@ -91,6 +103,7 @@ export function TodayClient({ userRole }: { userRole: OperatorRole }) {
           </select>
         ) : null}
       </div>
+      {runMessage ? <p className="form-message sent">{runMessage}</p> : null}
 
       <div className="today-stack">
         {loading ? <div className="panel skeleton short" /> : null}

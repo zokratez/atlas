@@ -1,6 +1,17 @@
 module.exports = {
   apps: [
     {
+      name: "atlas-dispatcher",
+      cwd: __dirname,
+      script: "dist/workers/dispatcher.js",
+      interpreter: "node",
+      autorestart: true,
+      max_memory_restart: "200M",
+      env: {
+        NODE_ENV: "production"
+      }
+    },
+    {
       name: "atlas-scout",
       cwd: __dirname,
       script: "dist/workers/scout.js",

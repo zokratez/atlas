@@ -7,6 +7,7 @@ import { processIntakeRows } from "../lib/intake.js";
 import { parseJsonArray } from "../lib/json.js";
 import { createProvider } from "../lib/provider.js";
 import { fetchSnapshot } from "../lib/sources.js";
+import { isDirectRun } from "../lib/env.js";
 
 type FindingDraft = {
   property: string;
@@ -128,11 +129,13 @@ export async function main() {
   console.log(`atlas-scout prepared ${intakeCount + capped.length} findings.`);
 }
 
-main().catch((error: unknown) => {
-  if (error instanceof GovernorStop) {
-    console.log(`atlas-scout stopped by governor: ${error.message}`);
-    return;
-  }
-  console.error(error);
-  process.exit(1);
-});
+if (isDirectRun(import.meta.url)) {
+  main().catch((error: unknown) => {
+    if (error instanceof GovernorStop) {
+      console.log(`atlas-scout stopped by governor: ${error.message}`);
+      return;
+    }
+    console.error(error);
+    process.exit(1);
+  });
+}

@@ -203,6 +203,17 @@ export function DropClient() {
     await loadHistory();
   }
 
+  async function queueStudyNow() {
+    setMessage("");
+    const response = await fetch("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ worker: "scout" }),
+    });
+    setState(response.ok ? "sent" : "error");
+    setMessage(response.ok ? "Queued, runs within a minute." : "Could not queue Scout.");
+  }
+
   function readyLabel() {
     if (files.length === 0) return null;
     if (files.length === 1) return `Ready: ${files[0].name}`;
@@ -275,6 +286,12 @@ export function DropClient() {
         <button type="submit" disabled={state === "submitting" || (!content.trim() && files.length === 0)}>
           {state === "submitting" ? "Submitting" : "Submit"}
         </button>
+
+        {state === "sent" ? (
+          <button className="secondary" type="button" onClick={queueStudyNow}>
+            Study my drops now
+          </button>
+        ) : null}
 
         {message ? <p className={`form-message ${state === "error" ? "error" : "sent"}`}>{message}</p> : null}
       </form>

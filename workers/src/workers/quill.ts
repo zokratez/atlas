@@ -6,6 +6,7 @@ import { GovernorStop, ModelGovernor } from "../lib/governor.js";
 import { parseJsonArray } from "../lib/json.js";
 import { createProvider } from "../lib/provider.js";
 import { runComplianceGate } from "../lib/compliance.js";
+import { isDirectRun } from "../lib/env.js";
 
 type FindingRow = {
   id: string;
@@ -414,12 +415,14 @@ export async function main() {
   console.log(`atlas-quill prepared ${inserted} drafts.`);
 }
 
-main().catch((error: unknown) => {
-  if (error instanceof GovernorStop) {
-    console.log(`atlas-quill stopped by governor: ${error.message}`);
-    return;
-  }
+if (isDirectRun(import.meta.url)) {
+  main().catch((error: unknown) => {
+    if (error instanceof GovernorStop) {
+      console.log(`atlas-quill stopped by governor: ${error.message}`);
+      return;
+    }
 
-  console.error(error);
-  process.exit(1);
-});
+    console.error(error);
+    process.exit(1);
+  });
+}

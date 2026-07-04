@@ -12,6 +12,7 @@
     "lens:monthly": "node dist/workers/lens.js --cadence monthly",
     "lens:quarterly": "node dist/workers/lens.js --cadence quarterly",
     "quill": "node dist/workers/quill.js",
+    "dispatcher": "node dist/workers/dispatcher.js",
     "producer": "node dist/workers/producer.js",
     "results:autopilot": "node dist/workers/results-autopilot.js",
     "results:instagram": "node dist/workers/ig-puller.js",
