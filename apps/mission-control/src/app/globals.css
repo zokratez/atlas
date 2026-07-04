@@ -164,7 +164,7 @@ a {
 
 .nav-tabs {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
   padding: 12px 0;
   position: sticky;
@@ -824,6 +824,7 @@ a {
 
 .drop-form textarea,
 .drop-form select,
+.drop-form input:not([type="file"]),
 .drop-form input[type="file"] {
   width: 100%;
   border: 1px solid var(--line);
@@ -842,6 +843,40 @@ a {
 
 .drop-form select {
   min-height: 44px;
+}
+
+.drop-form input:not([type="file"]) {
+  min-height: 44px;
+}
+
+.video-dissection-box {
+  display: grid;
+  gap: 8px;
+}
+
+.preflight {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(239, 200, 106, 0.32);
+  border-radius: 6px;
+  background: rgba(239, 200, 106, 0.08);
+  padding: 10px;
+}
+
+.preflight strong {
+  color: var(--amber);
+  font-size: 12px;
+}
+
+.preflight span,
+.preflight code {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.preflight code {
+  overflow-wrap: anywhere;
 }
 
 .form-message {

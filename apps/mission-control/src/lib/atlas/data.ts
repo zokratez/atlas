@@ -5,6 +5,8 @@ export type Decision = "approve" | "kill" | "edit" | "revive";
 export type Verdict = "keep" | "kill" | "blemish";
 export type ActionStatus = "pending" | "approved" | "killed" | "published";
 export type ResultMetric = "views" | "reach" | "profile_visits" | "link_taps" | "follows" | "custom";
+export type AssetKind = "video" | "image" | "text";
+export type AssetStatus = "shelf" | "scheduled" | "posted" | "retired";
 export type AtlasPropertyFilter = "all" | "store" | "huh" | "restaurant" | "general";
 export type AtlasChannelFilter =
   | "all"
@@ -85,6 +87,112 @@ export async function listSpecimens(filters: AtlasFilters = {}) {
   return filterRows(data ?? [], filters)
     .sort((a, b) => specimenViews(b) - specimenViews(a))
     .slice(0, 50);
+}
+
+export async function listAssets() {
+  const { data, error } = await atlasDb()
+    .from("assets")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error) {
+    if (error.message.includes("assets") || error.code === "42P01") return [];
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function createAsset(input: {
+  property: string;
+  kind: AssetKind;
+  title: string;
+  description?: string | null;
+  file_path?: string | null;
+  thumbnail_path?: string | null;
+  raw_video_path?: string | null;
+  duration_seconds?: number | null;
+  intended_channels: string[];
+  notes?: string | null;
+}) {
+  const { data, error } = await atlasDb()
+    .from("assets")
+    .insert({
+      property: normalizeProperty(input.property),
+      kind: input.kind,
+      title: input.title,
+      description: input.description ?? null,
+      file_path: input.file_path ?? null,
+      thumbnail_path: input.thumbnail_path ?? null,
+      raw_video_path: input.raw_video_path ?? null,
+      duration_seconds: input.duration_seconds ?? null,
+      intended_channels: input.intended_channels.map((channel) => normalizeChannel(channel)).filter((channel) => channel !== "all"),
+      status: "shelf",
+      notes: input.notes ?? null,
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function prepAssetPost(assetId: string) {
+  const { data: asset, error } = await atlasDb()
+    .from("assets")
+    .select("*")
+    .eq("id", assetId)
+    .single();
+
+  if (error) throw error;
+
+  const recommendation = (asset.recommendation ?? {}) as {
+    channel?: string;
+    format_note?: string;
+    best_window?: string;
+    confidence?: number;
+    receipts?: string[];
+  };
+  const channel = normalizeChannel(recommendation.channel ?? asset.intended_channels?.[0] ?? "general");
+  const hook = asset.description || asset.title;
+  const body = [
+    asset.description || asset.title,
+    recommendation.format_note ? `Format note: ${recommendation.format_note}` : null,
+    recommendation.best_window ? `Best window: ${recommendation.best_window}` : null,
+  ].filter(Boolean).join("\n");
+  const compliance = runComplianceGate(asset.property, `${asset.title}\n${hook}\n${body}`);
+
+  const { data, error: insertError } = await atlasDb()
+    .from("actions")
+    .insert({
+      agent: "atlas-quill",
+      property: asset.property,
+      kind: "post",
+      channel,
+      payload: {
+        title: asset.title,
+        hook,
+        body,
+        asset_id: asset.id,
+        armory_recommendation: recommendation,
+        pattern_ids: recommendation.receipts ?? [],
+      },
+      compliance_status: compliance.status,
+      compliance_notes: compliance.notes,
+      status: compliance.status === "passed" ? "pending" : "killed",
+    })
+    .select("id")
+    .single();
+
+  if (insertError) throw insertError;
+
+  await atlasDb()
+    .from("assets")
+    .update({ status: compliance.status === "passed" ? "scheduled" : "shelf", posted_action_id: data.id })
+    .eq("id", asset.id);
+
+  return data;
 }
 
 export async function getFeedCounts() {

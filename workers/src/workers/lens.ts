@@ -78,6 +78,16 @@ type SpecimenRow = {
   pattern_ids: string[] | null;
 };
 
+type AssetRow = {
+  id: string;
+  property: string;
+  kind: "video" | "image" | "text";
+  title: string;
+  description: string | null;
+  duration_seconds: number | null;
+  intended_channels: string[] | null;
+};
+
 const allowedProperties = new Set(["store", "huh", "restaurant", "general"]);
 
 async function recentFindings() {
@@ -242,7 +252,55 @@ async function upsertPatterns(drafts: PatternDraft[], findings: FindingRow[]) {
   await markBustedFromResults();
   await annotatePatternsWithResults();
   await linkSpecimensToPatterns();
+  await recommendShelfAssets();
   return changed;
+}
+
+async function recommendShelfAssets() {
+  const { data: assets, error: assetsError } = await atlasDb()
+    .from("assets")
+    .select("id, property, kind, title, description, duration_seconds, intended_channels")
+    .eq("status", "shelf");
+
+  if (isMissingAssetsError(assetsError)) return;
+  if (assetsError) throw assetsError;
+
+  const patterns = await existingPatterns();
+  const { data: results, error: resultsError } = await atlasDb()
+    .from("results")
+    .select("id, metric, value, raw, created_at")
+    .eq("source", "manual")
+    .limit(100);
+
+  if (resultsError) throw resultsError;
+
+  for (const asset of (assets ?? []) as AssetRow[]) {
+    const propertyPatterns = patterns
+      .filter((pattern) => pattern.property === asset.property && pattern.status !== "busted")
+      .sort((a, b) => b.support_count - a.support_count);
+    const bestPattern = propertyPatterns[0];
+    const channel = chooseAssetChannel(asset, bestPattern);
+    const recommendation = {
+      best_window: bestWindow(channel),
+      channel,
+      format_note: formatNote(asset),
+      confidence: bestPattern ? Math.min(0.9, 0.45 + bestPattern.support_count / 20) : 0.35,
+      receipts: [
+        ...(bestPattern ? [bestPattern.id] : []),
+        ...((results ?? []).slice(0, 3).map((result) => result.id)),
+      ],
+      rationale: bestPattern
+        ? `Matched to pattern "${bestPattern.name}" (${bestPattern.status}, seen ${bestPattern.support_count}x).`
+        : "No strong pattern yet; use safest channel/default timing.",
+    };
+
+    const { error } = await atlasDb()
+      .from("assets")
+      .update({ recommendation })
+      .eq("id", asset.id);
+
+    if (error) throw error;
+  }
 }
 
 async function annotatePatternsWithResults() {
@@ -491,10 +549,37 @@ function isMissingSpecimensError(error: { code?: string; message?: string } | nu
   return error?.code === "42P01" || Boolean(error?.message?.includes("specimens"));
 }
 
+function isMissingAssetsError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42P01" || Boolean(error?.message?.includes("assets"));
+}
+
 function compactNumber(value: number) {
   if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))}M`;
   if (value >= 1_000) return `${Number((value / 1_000).toFixed(1))}K`;
   return String(Math.round(value));
+}
+
+function chooseAssetChannel(asset: AssetRow, pattern: PatternRow | undefined) {
+  const intended = (asset.intended_channels ?? []).map((channel) => normalizeChannel(channel));
+  if (pattern && intended.includes(pattern.channel as ReturnType<typeof normalizeChannel>)) return pattern.channel;
+  if (intended.length > 0) return intended[0];
+  return pattern?.channel ?? "general";
+}
+
+function bestWindow(channel: string) {
+  if (channel === "email") return "weekday morning";
+  if (channel === "tiktok" || channel === "instagram" || channel === "youtube") return "evening test window";
+  if (channel === "x") return "weekday lunch or evening";
+  return "next available manual slot";
+}
+
+function formatNote(asset: AssetRow) {
+  if (asset.kind === "video") {
+    if (asset.duration_seconds && asset.duration_seconds > 20) return "trim to <20s; hook in first 2s";
+    return "hook in first 2s; keep the first frame readable";
+  }
+  if (asset.kind === "image") return "lead with the visible proof; caption supplies context";
+  return "open with the problem; keep one idea per post";
 }
 
 main().catch((error: unknown) => {

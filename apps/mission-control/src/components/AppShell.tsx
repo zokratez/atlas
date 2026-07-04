@@ -9,16 +9,18 @@ import {
   CircleDollarSign,
   Inbox,
   ListChecks,
+  PackageOpen,
   Power,
   Rss,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-type NavKey = "feed" | "drop" | "queue" | "experiments" | "trends" | "costs";
+type NavKey = "feed" | "drop" | "armory" | "queue" | "experiments" | "trends" | "costs";
 
 const navItems: Array<{ key: NavKey; href: string; label: string; Icon: typeof Rss }> = [
   { key: "feed", href: "/feed", label: "Feed", Icon: Rss },
   { key: "drop", href: "/drop", label: "Drop", Icon: Inbox },
+  { key: "armory", href: "/armory", label: "Armory", Icon: PackageOpen },
   { key: "queue", href: "/queue", label: "Queue", Icon: ListChecks },
   { key: "experiments", href: "/experiments", label: "Tests", Icon: ChartNoAxesCombined },
   { key: "trends", href: "/trends", label: "Trends", Icon: ChartLine },

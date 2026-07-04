@@ -9,6 +9,7 @@
     "scout:pulse": "node dist/workers/scout-pulse.js",
     "lens": "node dist/workers/lens.js",
     "quill": "node dist/workers/quill.js",
+    "video:dissect": "node dist/workers/video-dissect.js",
     "check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
