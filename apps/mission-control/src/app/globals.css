@@ -442,6 +442,19 @@ a {
   color: var(--red);
 }
 
+.login-error {
+  border: 1px solid rgba(255, 107, 107, 0.55);
+  border-radius: 6px;
+  background: rgba(255, 107, 107, 0.1);
+  color: #ffd0d0;
+  margin: 18px 0 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .form-message.sent {
   color: var(--green);
 }
