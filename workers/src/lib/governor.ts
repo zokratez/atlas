@@ -1,4 +1,4 @@
-import type { WorkerConfig } from "./config.js";
+import type { ResolvedJobConfig, WorkerConfig } from "./config.js";
 import { atlasDb } from "./db.js";
 import type { LlmProvider, LlmRequest, LlmResponse } from "./provider.js";
 
@@ -15,7 +15,13 @@ function startOfTodayIso() {
   return now.toISOString();
 }
 
-function estimateUsd(config: WorkerConfig, inputTokens: number, outputTokens: number) {
+type CostConfig = Pick<
+  WorkerConfig | ResolvedJobConfig,
+  | "estimated_usd_per_million_input_tokens"
+  | "estimated_usd_per_million_output_tokens"
+>;
+
+function estimateUsd(config: CostConfig, inputTokens: number, outputTokens: number) {
   const inputUsd =
     (inputTokens / 1_000_000) * config.estimated_usd_per_million_input_tokens;
   const outputUsd =
@@ -25,7 +31,7 @@ function estimateUsd(config: WorkerConfig, inputTokens: number, outputTokens: nu
 
 export class ModelGovernor {
   constructor(
-    private readonly config: WorkerConfig,
+    private readonly config: WorkerConfig | ResolvedJobConfig,
     private readonly provider: LlmProvider,
   ) {}
 

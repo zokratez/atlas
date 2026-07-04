@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "scout": "node dist/workers/scout.js",
+    "scout:pulse": "node dist/workers/scout-pulse.js",
     "lens": "node dist/workers/lens.js",
     "check": "tsc -p tsconfig.json --noEmit"
   },

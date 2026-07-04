@@ -1,4 +1,4 @@
-import { loadConfig } from "../lib/config.js";
+import { jobConfig, loadConfig } from "../lib/config.js";
 import { atlasDb } from "../lib/db.js";
 import { loadScoutDoctrine } from "../lib/doctrine.js";
 import { GovernorStop, ModelGovernor } from "../lib/governor.js";
@@ -59,12 +59,13 @@ async function insertFindings(findings: FindingDraft[]) {
 
 export async function main() {
   const config = loadConfig();
-  const governor = new ModelGovernor(config, createProvider(config));
+  const scoutConfig = jobConfig(config, "scout");
+  const governor = new ModelGovernor(scoutConfig, createProvider(scoutConfig));
   const system = buildSystemPrompt();
   const allFindings: FindingDraft[] = [];
 
   for (const target of config.research_targets) {
-    if (allFindings.length >= config.max_findings_per_night) break;
+    if (allFindings.length >= scoutConfig.max_findings_per_run) break;
 
     const snapshots = await Promise.all(target.urls.map((url) => fetchSnapshot(url)));
     const response = await governor.complete("atlas-scout", {
@@ -91,7 +92,7 @@ export async function main() {
     allFindings.push(...parsed);
   }
 
-  const capped = allFindings.slice(0, config.max_findings_per_night);
+  const capped = allFindings.slice(0, scoutConfig.max_findings_per_run);
   await insertFindings(capped);
   console.log(`atlas-scout prepared ${capped.length} findings.`);
 }

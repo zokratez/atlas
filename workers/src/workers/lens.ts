@@ -1,4 +1,4 @@
-import { loadConfig } from "../lib/config.js";
+import { jobConfig, loadConfig } from "../lib/config.js";
 import { atlasDb } from "../lib/db.js";
 import { GovernorStop, ModelGovernor } from "../lib/governor.js";
 import { parseJsonArray } from "../lib/json.js";
@@ -55,7 +55,9 @@ async function insertLensFindings(findings: LensFinding[]) {
   const { error } = await atlasDb().from("findings").insert(
     findings.map((finding) => ({
       agent: "atlas-lens",
-      property: finding.property,
+      property: ["store", "huh", "restaurant", "general"].includes(finding.property)
+        ? finding.property
+        : "general",
       claim: finding.claim,
       evidence: finding.evidence,
       source_url: finding.source_url,
@@ -69,6 +71,7 @@ async function insertLensFindings(findings: LensFinding[]) {
 
 export async function main() {
   const config = loadConfig();
+  const lensConfig = jobConfig(config, "lens");
   const findings = await recentScoutFindings();
 
   if (findings.length === 0) {
@@ -76,7 +79,7 @@ export async function main() {
     return;
   }
 
-  const governor = new ModelGovernor(config, createProvider(config));
+  const governor = new ModelGovernor(lensConfig, createProvider(lensConfig));
   const response = await governor.complete("atlas-lens", {
     system:
       "You are Atlas Lens, the analytical pass over Scout findings. Return only JSON arrays.",

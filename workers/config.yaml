@@ -3,6 +3,23 @@ model: claude-haiku-4-5
 max_findings_per_night: 20
 estimated_usd_per_million_input_tokens: 0.80
 estimated_usd_per_million_output_tokens: 4.00
+jobs:
+  scout:
+    provider: anthropic
+    model: claude-haiku-4-5
+    max_findings_per_run: 20
+  lens:
+    provider: anthropic
+    model: claude-haiku-4-5
+    max_findings_per_run: 5
+  scout-pulse:
+    provider: xai
+    model: grok-4.3
+    max_findings_per_run: 10
+    live_search: true
+    x_search: true
+    estimated_usd_per_million_input_tokens: 1.25
+    estimated_usd_per_million_output_tokens: 2.50
 properties:
   - huh
   - paco
