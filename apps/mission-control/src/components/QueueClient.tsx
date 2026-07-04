@@ -263,6 +263,7 @@ export function QueueClient() {
                       <option value="24h">24h</option>
                       <option value="72h">72h</option>
                       <option value="7d">7d</option>
+                      <option value="30d">30d</option>
                       <option value="other">other</option>
                     </select>
                     <input value={resultNote} onChange={(event) => setResultNote(event.target.value)} placeholder="Optional note" />

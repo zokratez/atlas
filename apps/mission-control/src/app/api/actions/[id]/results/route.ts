@@ -3,7 +3,7 @@ import { requireApiRole } from "@/lib/atlas/auth";
 import { logActionResult, type ResultMetric } from "@/lib/atlas/data";
 
 const metrics = new Set(["views", "reach", "profile_visits", "link_taps", "follows", "custom"]);
-const checkpoints = new Set(["24h", "72h", "7d", "other"]);
+const checkpoints = new Set(["24h", "72h", "7d", "30d", "other"]);
 
 export async function POST(
   request: NextRequest,

@@ -69,7 +69,22 @@ type ResultRow = {
 
 type ActionRow = {
   id: string;
-  payload: { pattern_ids?: unknown } | null;
+  property?: string;
+  channel?: string | null;
+  status?: string;
+  payload: { pattern_ids?: unknown; title?: unknown; hook?: unknown; body?: unknown; caption?: unknown } | null;
+};
+
+type SleeperSignal = {
+  action_id: string;
+  title: string;
+  metric: string;
+  latest_checkpoint: string;
+  latest_value: number;
+  earlier_value: number;
+  ratio: number;
+  pattern_ids: string[];
+  result_id: string;
 };
 
 type SpecimenRow = {
@@ -508,6 +523,11 @@ async function runCadence(cadence: Cadence, governor: ModelGovernor) {
     await markFadingPatterns();
   }
 
+  const sleepers = cadence === "weekly" ? await detectSleepers() : { risers: [], faders: [] };
+  if (cadence === "weekly") {
+    await reweightRiserPatterns(sleepers.risers);
+  }
+
   const [patternsResult, decisionsResult, resultsResult, costsResult, findingsResult] = await Promise.all([
     atlasDb().from("patterns").select("id, property, channel, name, status, support_count, updated_at").order("updated_at", { ascending: false }).limit(30),
     atlasDb().from("decisions").select("id, decision, reason, operator_email, created_at").order("created_at", { ascending: false }).limit(60),
@@ -536,6 +556,7 @@ async function runCadence(cadence: Cadence, governor: ModelGovernor) {
     results: resultsResult.data ?? [],
     costs: costsResult.data ?? [],
     findings: findingsResult.data ?? [],
+    sleeper_detection: sleepers,
     receiptIds,
   });
 
@@ -578,6 +599,117 @@ async function runCadence(cadence: Cadence, governor: ModelGovernor) {
   console.log(`atlas-lens ${cadence} cadence finding written with receipts.`);
 }
 
+async function detectSleepers(): Promise<{ risers: SleeperSignal[]; faders: SleeperSignal[] }> {
+  const { data: results, error: resultsError } = await atlasDb()
+    .from("results")
+    .select("id, metric, value, raw")
+    .eq("source", "manual");
+
+  if (resultsError) throw resultsError;
+
+  const typedResults = (results ?? []) as ResultRow[];
+  const actionIds = Array.from(new Set(typedResults.map((result) => result.raw?.action_id).filter(Boolean))) as string[];
+  if (actionIds.length === 0) return { risers: [], faders: [] };
+
+  const { data: actions, error: actionsError } = await atlasDb()
+    .from("actions")
+    .select("id, property, channel, status, payload")
+    .in("id", actionIds)
+    .eq("status", "published");
+
+  if (actionsError) throw actionsError;
+
+  const actionsById = new Map((actions ?? []).map((action) => [action.id, action as ActionRow]));
+  const grouped = new Map<string, ResultRow[]>();
+  for (const result of typedResults) {
+    const actionId = result.raw?.action_id;
+    if (!actionId || !actionsById.has(actionId)) continue;
+    const key = `${actionId}:${result.metric}`;
+    grouped.set(key, [...(grouped.get(key) ?? []), result]);
+  }
+
+  const risers: SleeperSignal[] = [];
+  const faders: SleeperSignal[] = [];
+  for (const rows of grouped.values()) {
+    const ordered = rows
+      .filter((row) => checkpointOrder(row.raw?.checkpoint) > 0)
+      .sort((a, b) => checkpointOrder(a.raw?.checkpoint) - checkpointOrder(b.raw?.checkpoint));
+    if (ordered.length < 2) continue;
+
+    const latest = ordered[ordered.length - 1];
+    const earlierRows = ordered.slice(0, -1);
+    const earlierValue = Math.max(...earlierRows.map((row) => Number(row.value ?? 0)));
+    const latestValue = Number(latest.value ?? 0);
+    if (!Number.isFinite(earlierValue) || earlierValue <= 0 || !Number.isFinite(latestValue)) continue;
+
+    const ratio = latestValue / earlierValue;
+    const actionId = latest.raw?.action_id;
+    const action = actionId ? actionsById.get(actionId) : null;
+    if (!actionId || !action) continue;
+    const signal = {
+      action_id: actionId,
+      title: actionTitle(action),
+      metric: latest.metric,
+      latest_checkpoint: latest.raw?.checkpoint ?? "unknown",
+      latest_value: latestValue,
+      earlier_value: earlierValue,
+      ratio: Number(ratio.toFixed(2)),
+      pattern_ids: patternIdsFromAction(action),
+      result_id: latest.id,
+    };
+
+    if (checkpointOrder(latest.raw?.checkpoint) >= checkpointOrder("7d") && ratio >= 1.25) {
+      risers.push(signal);
+    } else if (ratio <= 0.7) {
+      faders.push(signal);
+    }
+  }
+
+  return {
+    risers: risers.sort((a, b) => b.ratio - a.ratio).slice(0, 5),
+    faders: faders.sort((a, b) => a.ratio - b.ratio).slice(0, 5),
+  };
+}
+
+async function reweightRiserPatterns(risers: SleeperSignal[]) {
+  const boosts = new Map<string, SleeperSignal[]>();
+  for (const riser of risers) {
+    for (const patternId of riser.pattern_ids) {
+      boosts.set(patternId, [...(boosts.get(patternId) ?? []), riser]);
+    }
+  }
+
+  for (const [patternId, signals] of boosts.entries()) {
+    const { data: pattern, error } = await atlasDb()
+      .from("patterns")
+      .select("id, description, support_count, confidence")
+      .eq("id", patternId)
+      .single();
+
+    if (isMissingPatternsError(error)) return;
+    if (error) throw error;
+
+    const description = String(pattern.description ?? "");
+    const freshSignals = signals.filter((signal) => !description.includes(`[sleeper:${signal.result_id}]`));
+    if (freshSignals.length === 0) continue;
+
+    const markers = freshSignals
+      .map((signal) => `[sleeper:${signal.result_id}] late ${signal.metric} ${signal.latest_checkpoint} ${signal.ratio}x on "${signal.title}"`)
+      .join(" ");
+    const { error: updateError } = await atlasDb()
+      .from("patterns")
+      .update({
+        support_count: Number(pattern.support_count ?? 0) + freshSignals.length,
+        confidence: Math.min(0.95, Number(pattern.confidence ?? 0.5) + freshSignals.length * 0.03),
+        description: [description, `Sleeper boost: ${markers}`].filter(Boolean).join(" "),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", patternId);
+
+    if (updateError) throw updateError;
+  }
+}
+
 function cadencePrompt(cadence: Cadence, context: Record<string, unknown>) {
   if (cadence === "quarterly") {
     return `Write a skeleton reminder finding: "quarterly review due: strategy doc vs results." Include why the human ritual matters, in one paragraph. Context: ${JSON.stringify(context, null, 2)}`;
@@ -585,7 +717,7 @@ function cadencePrompt(cadence: Cadence, context: Record<string, unknown>) {
   if (cadence === "monthly") {
     return `Write the monthly Atlas rhythm finding. Cover pattern lifecycle audit, experiment verdicts due, config-target suggestions based on kept content. Suggest only, never self-apply. Context: ${JSON.stringify(context, null, 2)}`;
   }
-  return `Write "The Week" as one pinned Atlas finding: patterns risen/fallen, best/worst published post by logged results, kill-reason trends, cost summary, and exactly ONE suggested tweak. Suggest only, never self-apply. Context: ${JSON.stringify(context, null, 2)}`;
+  return `Write "The Week" as one pinned Atlas finding: patterns risen/fallen, sleeper risers (late momentum) and faders (decay), best/worst published post by logged results, kill-reason trends, cost summary, and exactly ONE suggested tweak. Note that risers count more because they survived algorithm decay. Suggest only, never self-apply. Context: ${JSON.stringify(context, null, 2)}`;
 }
 
 function cadenceTitle(cadence: Cadence) {
@@ -636,6 +768,27 @@ function preferredResultMetric(results: ResultRow[]) {
     if (results.some((result) => result.metric === metric)) return metric;
   }
   return results[0]?.metric ?? "value";
+}
+
+function checkpointOrder(value: string | null | undefined) {
+  if (value === "24h") return 1;
+  if (value === "72h") return 2;
+  if (value === "7d") return 3;
+  if (value === "30d") return 4;
+  return 0;
+}
+
+function patternIdsFromAction(action: ActionRow) {
+  const ids = Array.isArray(action.payload?.pattern_ids) ? action.payload.pattern_ids : [];
+  return ids.filter((id): id is string => typeof id === "string");
+}
+
+function actionTitle(action: ActionRow) {
+  const hook = action.payload?.hook;
+  const title = action.payload?.title;
+  if (typeof hook === "string" && hook.trim()) return hook;
+  if (typeof title === "string" && title.trim()) return title;
+  return action.id;
 }
 
 function average(values: number[]) {
