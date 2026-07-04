@@ -24,6 +24,7 @@ type Draft = {
   title: string;
   hook: string;
   body: string;
+  production_note?: string;
   source_finding_ids?: string[];
   pattern_names?: string[];
 };
@@ -64,6 +65,21 @@ type GateFailureNote = {
 };
 
 const quillSoulPath = "/Users/samoteo/.openclaw/agents/quill/SOUL.md";
+const competitorNames = [
+  "duolingo",
+  "speak",
+  "praktika",
+  "jumpspeak",
+  "peptide sciences",
+  "limitless life",
+  "swiss chems",
+  "marek health",
+  "function health",
+  "levels",
+  "momentous",
+  "thorne",
+];
+
 function voiceForProperty(property: string) {
   if (property === "store") {
     return "pain, truth, funny, real. Quiet proof. RUO only. Research-use framing is mandatory. Claims stay limited to purity, testing, logistics, education, and COA status. COA refs must be real Janoshik links or pendiente. No health, human-use, dosing, cosmetic, customer-results, or paid-ad targeting claims.";
@@ -78,6 +94,15 @@ function voiceForProperty(property: string) {
 
 function buildSystemPrompt(property: string) {
   const quillSoul = fs.readFileSync(quillSoulPath, "utf8");
+  const voiceLaws = `
+Sam decision laws, highest priority:
+1. Hook law: open by naming one specific human moment or fear the reader recognizes, such as "the freeze when someone replies off-script." Never open with a feature. Never open with a brand name.
+2. Format law: prose rhythm only. No numbered steps, no "Step 1:", no listicle skeletons in post bodies. Same insight, written as flowing sentences.
+3. Finished-content law: every draft body must be postable as-is. No shot lists, no briefs, no production notes in the queue body. If production context is useful, put it in production_note only.
+4. Competitor law: rivals may appear at most once, only as setup, then they exit.
+5. Specificity law for store/general: use concrete numbers, dates, named sources, and receipts inside the copy itself.
+6. Dedup law: do not restate the same angle as another draft. Each draft needs a visibly different human moment, receipt, or mechanism.
+`;
   const storeRules = property === "store" ? `
 Store RUO drafting doctrine:
 - Every store draft must explicitly frame the topic as research-use-only / RUO / not for human use.
@@ -87,7 +112,9 @@ Store RUO drafting doctrine:
 - Never mention taking, injecting, dosing, cycles, stacks, symptoms, treatment, results, transformations, before/after, skin/hair/body outcomes, or paid-ad targeting.
 - Store channels only: seo, email, x. Store kinds only: page for SEO article outlines, email for email-capture copy, post for educational X posts.
 ` : "";
-  return `${quillSoul}
+  return `${voiceLaws}
+
+${quillSoul}
 
 Atlas Quill doctrine:
 - Publishing is 100% manual. You draft only.
@@ -122,7 +149,7 @@ Store-specific output menu:
 Rules:
 - Return a JSON array only.
 - Max ${maxDrafts} drafts.
-- Each draft object: kind, channel, title, hook, body, source_finding_ids, pattern_names.
+- Each draft object: kind, channel, title, hook, body, production_note, source_finding_ids, pattern_names.
 - channel must be one of seo, email, tiktok, instagram, youtube, x, community, general.
 - kind must be one of post, email, page.
 - Keep each body under 90 words.
@@ -130,6 +157,11 @@ Rules:
 - Store drafts must obey RUO-only framing.
 - Huh drafts must not overpromise fluency or outcomes.
 - Zero hype. Pain, truth, funny, real.
+- The hook must name a specific human moment or fear before any product, brand, or feature.
+- Bodies must be flowing prose. Do not write numbered steps, bullets, listicles, shot lists, or briefs.
+- Bodies must be finished content Sam can post as-is. Put optional production context in production_note only.
+- Competitor names can appear once at most, only as setup.
+- Store/general drafts need concrete receipts in the copy: numbers, dates, source names, COA status, or named proof.
 ${storeRules}
 
 Property: ${property}
@@ -185,6 +217,22 @@ async function todaysActionCount(property: string) {
 
   if (error) throw error;
   return count ?? 0;
+}
+
+async function todaysDraftTexts(property: string) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+
+  const { data, error } = await atlasDb()
+    .from("actions")
+    .select("payload")
+    .eq("agent", "atlas-quill")
+    .eq("property", property)
+    .gte("created_at", start.toISOString())
+    .limit(100);
+
+  if (error) throw error;
+  return (data ?? []).map((row) => draftComparableText((row.payload ?? {}) as Record<string, unknown>));
 }
 
 async function recentTasteDecisions(property: string) {
@@ -332,8 +380,19 @@ function isMissingOperatorsError(error: { code?: string; message?: string } | nu
 }
 
 async function insertDrafts(property: string, drafts: Draft[], patterns: PatternRow[]) {
+  const existingTexts = await todaysDraftTexts(property);
+  const acceptedTexts = [...existingTexts];
+  let inserted = 0;
+
   for (const draft of drafts) {
     const text = `${draft.title}\n${draft.hook}\n${draft.body}`;
+    const comparableText = draftComparableText(draft as unknown as Record<string, unknown>);
+    const skipReason = draftSkipReason(draft, comparableText, acceptedTexts);
+    if (skipReason) {
+      console.log(`atlas-quill skipped ${property} draft "${draft.title}" (${skipReason}).`);
+      continue;
+    }
+
     const compliance = runComplianceGate(property, text);
     const score = patternScore(draft, patterns);
     const channel = normalizeChannel(draft.channel);
@@ -347,6 +406,7 @@ async function insertDrafts(property: string, drafts: Draft[], patterns: Pattern
         title: draft.title,
         hook: draft.hook,
         body: draft.body,
+        production_note: draft.production_note ?? null,
         source_finding_ids: draft.source_finding_ids ?? [],
         pattern_ids: patterns
           .filter((pattern) => score.names.some((name) => name.startsWith(pattern.name)))
@@ -359,7 +419,65 @@ async function insertDrafts(property: string, drafts: Draft[], patterns: Pattern
     });
 
     if (error) throw error;
+    acceptedTexts.push(comparableText);
+    inserted += 1;
   }
+
+  return inserted;
+}
+
+function draftComparableText(payload: Record<string, unknown>) {
+  return [payload.title, payload.hook, payload.body, payload.caption]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ");
+}
+
+function draftSkipReason(draft: Draft, comparableText: string, existingTexts: string[]) {
+  if (hasStepFormattedBody(draft.body)) return "step-formatted body";
+  if (hasProductionBriefBody(draft.body)) return "production brief in body";
+  if (competitorMentionCount(`${draft.title} ${draft.hook} ${draft.body}`) > 1) return "competitor appears more than once";
+  if (existingTexts.some((existingText) => similarityScore(comparableText, existingText) >= 0.78)) return "near-duplicate same-day draft";
+  return null;
+}
+
+function hasStepFormattedBody(body: string) {
+  return /(^|\n)\s*(?:step\s*\d+|steps?:|\d+[.)]\s+|[-*]\s+)/i.test(body);
+}
+
+function hasProductionBriefBody(body: string) {
+  return /\b(shot list|film this|record this|b-roll|voiceover|production note|creative brief|script notes?|camera angle)\b/i.test(body);
+}
+
+function competitorMentionCount(text: string) {
+  const normalized = text.toLowerCase();
+  return competitorNames.reduce((count, name) => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return count + (normalized.match(new RegExp(`\\b${escaped}\\b`, "g"))?.length ?? 0);
+  }, 0);
+}
+
+function similarityScore(a: string, b: string) {
+  const aTokens = tokenSet(a);
+  const bTokens = tokenSet(b);
+  if (aTokens.size === 0 || bTokens.size === 0) return 0;
+
+  let overlap = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) overlap += 1;
+  }
+
+  return (2 * overlap) / (aTokens.size + bTokens.size);
+}
+
+function tokenSet(value: string) {
+  return new Set(
+    value
+      .toLowerCase()
+      .replace(/https?:\/\/\S+/g, " ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(/\s+/)
+      .filter((token) => token.length > 3),
+  );
 }
 
 export async function main() {
@@ -408,8 +526,7 @@ export async function main() {
       }))
       .slice(0, remaining);
 
-    await insertDrafts(property, drafts, patterns);
-    inserted += drafts.length;
+    inserted += await insertDrafts(property, drafts, patterns);
   }
 
   console.log(`atlas-quill prepared ${inserted} drafts.`);
