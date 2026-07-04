@@ -25,6 +25,7 @@ const allowedProperties = new Set(["store", "huh", "restaurant", "general"]);
 
 export async function processIntakeRows(
   governor: ModelGovernor,
+  pulseGovernor: ModelGovernor,
   scoutConfig: ResolvedJobConfig,
   system: string,
   remainingCap: number,
@@ -48,10 +49,14 @@ export async function processIntakeRows(
     try {
       const source = await loadIntakeSource(row);
       const maxFindings = Math.min(3, remainingCap - insertedCount);
-      const prompt = source.image
+      const prompt = source.kind === "x-url"
+        ? buildXUrlPrompt(row, maxFindings)
+        : source.image
         ? buildPhotoPrompt(row, maxFindings)
         : buildIntakePrompt(row, source.text, maxFindings);
-      const response = await governor.complete("atlas-scout", {
+      const activeGovernor = source.kind === "x-url" ? pulseGovernor : governor;
+      const activeAgent = source.kind === "x-url" ? "atlas-scout-pulse" : "atlas-scout";
+      const response = await activeGovernor.complete(activeAgent, {
         system,
         maxTokens: 1200,
         temperature: 0.2,
@@ -79,13 +84,18 @@ export async function processIntakeRows(
         .filter((finding) => finding.claim && finding.evidence)
         .slice(0, maxFindings)
         .map((finding) => ({
-          agent: "atlas-scout",
+          agent: activeAgent,
           property: normalizeProperty(row.property ?? finding.property, finding.tags),
           claim: finding.claim,
           evidence: finding.evidence,
           source_url: row.kind === "url" ? row.content : finding.source_url ?? source.sourceUrl,
           confidence: Math.max(0, Math.min(1, Number(finding.confidence ?? 0.5))),
-          tags: Array.from(new Set([...(finding.tags ?? []), "intake", ...(source.image ? ["photo"] : [])])),
+          tags: Array.from(new Set([
+            ...(finding.tags ?? []),
+            "intake",
+            ...(source.image ? ["photo"] : []),
+            ...(source.kind === "x-url" ? ["pulse", "x"] : []),
+          ])),
         }));
 
       if (findings.length > 0) {
@@ -103,6 +113,11 @@ export async function processIntakeRows(
         continue;
       }
 
+      if (error instanceof WalledGardenError) {
+        await markIntake(row.id, "failed", "walled garden — screenshot it and drop the photo instead");
+        continue;
+      }
+
       await markIntake(
         row.id,
         "failed",
@@ -112,6 +127,25 @@ export async function processIntakeRows(
   }
 
   return insertedCount;
+}
+
+function buildXUrlPrompt(row: IntakeRow, maxFindings: number) {
+  return `Analyze this account/post's marketing approach.
+
+Use xAI search tools when available to inspect the X/Twitter URL.
+
+Rules:
+- Return a JSON array only.
+- Max ${maxFindings} findings.
+- Each object must include: property, claim, evidence, source_url, confidence, tags.
+- property must be one of: store, huh, restaurant, general.
+- Every tag array must include "intake", "pulse", and "x".
+- Focus on positioning, hook, audience, content format, social proof, and what Sam can steal ethically.
+- Tie every claim to the linked account/post evidence.
+- Reject generic social media advice.
+
+URL:
+${row.content}`;
 }
 
 function buildIntakePrompt(row: IntakeRow, text: string, maxFindings: number) {
@@ -187,6 +221,7 @@ async function markIntake(id: string, status: "processed" | "failed", notes: str
 }
 
 type LoadedSource = {
+  kind: "text" | "image" | "x-url";
   text: string;
   sourceUrl: string | null;
   image?: {
@@ -197,12 +232,20 @@ type LoadedSource = {
 
 async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
   if (row.kind === "text") {
-    return { text: row.content, sourceUrl: null };
+    return { kind: "text", text: row.content, sourceUrl: null };
   }
 
   if (row.kind === "url") {
+    if (isWalledGardenUrl(row.content)) {
+      throw new WalledGardenError();
+    }
+
+    if (isXUrl(row.content)) {
+      return { kind: "x-url", text: row.content, sourceUrl: row.content };
+    }
+
     if (isYouTubeUrl(row.content)) {
-      return { text: await loadYouTubeTranscript(row.content), sourceUrl: row.content };
+      return { kind: "text", text: await loadYouTubeTranscript(row.content), sourceUrl: row.content };
     }
 
     if (isTikTokUrl(row.content)) {
@@ -211,6 +254,7 @@ async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
 
     const snapshot = await fetchSnapshot(row.content);
     return {
+      kind: "text",
       text: [snapshot.title, snapshot.excerpt].filter(Boolean).join("\n\n"),
       sourceUrl: row.content,
     };
@@ -224,6 +268,7 @@ async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
 
   if (isImageExtension(extension)) {
     return {
+      kind: "image",
       text: "Photo intake file.",
       sourceUrl: row.content,
       image: {
@@ -237,10 +282,10 @@ async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
     const parser = new PDFParse({ data: buffer });
     const parsed = await parser.getText();
     await parser.destroy();
-    return { text: parsed.text, sourceUrl: row.content };
+    return { kind: "text", text: parsed.text, sourceUrl: row.content };
   }
 
-  return { text: buffer.toString("utf8"), sourceUrl: row.content };
+  return { kind: "text", text: buffer.toString("utf8"), sourceUrl: row.content };
 }
 
 function isImageExtension(extension: string | undefined) {
@@ -272,6 +317,24 @@ function isYouTubeUrl(value: string) {
 function isTikTokUrl(value: string) {
   try {
     return new URL(value).hostname.replace(/^www\./, "").endsWith("tiktok.com");
+  } catch {
+    return false;
+  }
+}
+
+function isXUrl(value: string) {
+  try {
+    const host = new URL(value).hostname.replace(/^www\./, "");
+    return host === "x.com" || host === "twitter.com" || host === "mobile.twitter.com";
+  } catch {
+    return false;
+  }
+}
+
+function isWalledGardenUrl(value: string) {
+  try {
+    const host = new URL(value).hostname.replace(/^www\./, "");
+    return host === "instagram.com" || host.endsWith(".instagram.com") || host === "facebook.com" || host.endsWith(".facebook.com");
   } catch {
     return false;
   }
@@ -318,5 +381,12 @@ class NoTranscriptError extends Error {
   constructor() {
     super("no transcript");
     this.name = "NoTranscriptError";
+  }
+}
+
+class WalledGardenError extends Error {
+  constructor() {
+    super("walled garden — screenshot it and drop the photo instead");
+    this.name = "WalledGardenError";
   }
 }

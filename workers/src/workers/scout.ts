@@ -61,11 +61,14 @@ async function insertFindings(findings: FindingDraft[]) {
 export async function main() {
   const config = loadConfig();
   const scoutConfig = jobConfig(config, "scout");
+  const pulseConfig = jobConfig(config, "scout-pulse");
   const governor = new ModelGovernor(scoutConfig, createProvider(scoutConfig));
+  const pulseGovernor = new ModelGovernor(pulseConfig, createProvider(pulseConfig));
   const system = buildSystemPrompt();
   const allFindings: FindingDraft[] = [];
   const intakeCount = await processIntakeRows(
     governor,
+    pulseGovernor,
     scoutConfig,
     system,
     scoutConfig.max_findings_per_run,
