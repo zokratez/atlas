@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/atlas/auth";
 import { decideAction, type Decision } from "@/lib/atlas/data";
 
-const decisions = new Set(["approve", "kill", "edit"]);
+const decisions = new Set(["approve", "kill", "edit", "revive"]);
 
 export async function POST(
   request: NextRequest,

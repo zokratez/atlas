@@ -275,6 +275,9 @@ a {
 .panel-meta,
 .tag-row,
 .button-row,
+.filter-row,
+.mode-toggle,
+.reason-grid,
 .status-strip {
   display: flex;
   flex-wrap: wrap;
@@ -309,6 +312,107 @@ a {
 .chip.failed {
   color: var(--red);
   border-color: rgba(255, 107, 107, 0.4);
+}
+
+.chip.validated {
+  color: var(--green);
+  border-color: rgba(123, 216, 143, 0.4);
+}
+
+.chip.emerging {
+  color: var(--teal);
+  border-color: rgba(94, 215, 198, 0.4);
+}
+
+.chip.fading {
+  color: var(--amber);
+  border-color: rgba(239, 200, 106, 0.4);
+}
+
+.chip.busted {
+  color: var(--red);
+  border-color: rgba(255, 107, 107, 0.4);
+}
+
+.filter-bar {
+  position: sticky;
+  top: 78px;
+  z-index: 4;
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(16, 19, 15, 0.96);
+  padding: 8px;
+  backdrop-filter: blur(14px);
+}
+
+.filter-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 1px;
+}
+
+.filter-row button,
+.mode-toggle button,
+.reason-grid button {
+  min-height: 42px;
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.filter-row button.active,
+.mode-toggle button.active {
+  border-color: rgba(94, 215, 198, 0.58);
+  background: rgba(94, 215, 198, 0.12);
+  color: var(--text);
+}
+
+.mode-toggle {
+  gap: 8px;
+}
+
+.queue-tabs button {
+  flex: 1;
+}
+
+.reason-panel {
+  border-color: rgba(239, 200, 106, 0.35);
+}
+
+.reason-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inline-reason {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.inline-reason input {
+  min-height: 42px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090b08;
+  color: var(--text);
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.compact-panel {
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.receipt-list {
+  display: grid;
+  gap: 8px;
 }
 
 .source-link {
@@ -689,6 +793,10 @@ a {
     align-items: stretch;
   }
 
+  .filter-bar {
+    top: 118px;
+  }
+
   .welcome-card {
     grid-template-columns: 1fr;
   }
@@ -699,6 +807,11 @@ a {
 
   .receipt-heading,
   .receipt-row {
+    grid-template-columns: 1fr;
+  }
+
+  .reason-grid,
+  .inline-reason {
     grid-template-columns: 1fr;
   }
 }

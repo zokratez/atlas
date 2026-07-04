@@ -1,4 +1,5 @@
 import { jobConfig, loadConfig } from "../lib/config.js";
+import { inferChannel, normalizeChannel } from "../lib/channel.js";
 import { atlasDb } from "../lib/db.js";
 import { loadScoutDoctrine } from "../lib/doctrine.js";
 import { GovernorStop, ModelGovernor } from "../lib/governor.js";
@@ -14,6 +15,7 @@ type FindingDraft = {
   source_url: string;
   confidence: number;
   tags: string[];
+  channel?: string;
 };
 
 function buildSystemPrompt() {
@@ -31,6 +33,7 @@ Rules:
 - Return a JSON array only.
 - Max 3 findings for this target.
 - Each object must include: property, claim, evidence, source_url, confidence, tags.
+- Include channel as one of: seo, email, tiktok, instagram, youtube, x, community, general.
 - property must exactly equal "${(input as { target?: { property?: string } }).target?.property ?? "general"}".
 - confidence must be 0-1.
 - Prefer specific claims tied to source evidence.
@@ -43,19 +46,31 @@ ${JSON.stringify(input, null, 2)}`;
 async function insertFindings(findings: FindingDraft[]) {
   if (findings.length === 0) return;
 
-  const { error } = await atlasDb().from("findings").insert(
-    findings.map((finding) => ({
+  const rows = findings.map((finding) => ({
       agent: "atlas-scout",
       property: finding.property,
       claim: finding.claim,
       evidence: finding.evidence,
       source_url: finding.source_url,
+      channel: normalizeChannel(finding.channel),
       confidence: finding.confidence,
       tags: finding.tags,
-    })),
-  );
+    }));
+
+  const { error } = await atlasDb().from("findings").insert(rows);
+  if (isMissingChannelError(error)) {
+    const { error: retryError } = await atlasDb()
+      .from("findings")
+      .insert(rows.map(({ channel: _channel, ...row }) => row));
+    if (retryError) throw retryError;
+    return;
+  }
 
   if (error) throw error;
+}
+
+function isMissingChannelError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(error?.message?.includes("channel"));
 }
 
 export async function main() {
@@ -95,6 +110,12 @@ export async function main() {
       .map((finding) => ({
         ...finding,
         property: target.property,
+        channel: inferChannel({
+          channel: finding.channel,
+          tags: [...(target.tags ?? []), ...(finding.tags ?? [])],
+          sourceUrl: finding.source_url,
+          text: `${finding.claim} ${finding.evidence}`,
+        }),
         tags: Array.from(new Set([...(target.tags ?? []), ...(finding.tags ?? []), "scout"])),
         confidence: Math.max(0, Math.min(1, Number(finding.confidence ?? 0.5))),
       }));

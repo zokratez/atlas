@@ -1,5 +1,6 @@
 import { PDFParse } from "pdf-parse";
 import type { ResolvedJobConfig } from "./config.js";
+import { inferChannel } from "./channel.js";
 import { atlasDb, getSupabase } from "./db.js";
 import { GovernorStop, type ModelGovernor } from "./governor.js";
 import { parseJsonArray } from "./json.js";
@@ -19,6 +20,7 @@ type IntakeFinding = {
   source_url: string | null;
   confidence: number;
   tags: string[];
+  channel?: string;
 };
 
 const allowedProperties = new Set(["store", "huh", "restaurant", "general"]);
@@ -86,6 +88,12 @@ export async function processIntakeRows(
         .map((finding) => ({
           agent: activeAgent,
           property: normalizeProperty(row.property ?? finding.property, finding.tags),
+          channel: inferChannel({
+            channel: source.kind === "x-url" ? "x" : finding.channel,
+            tags: finding.tags,
+            sourceUrl: row.kind === "url" ? row.content : finding.source_url ?? source.sourceUrl,
+            text: `${finding.claim} ${finding.evidence}`,
+          }),
           claim: finding.claim,
           evidence: finding.evidence,
           source_url: row.kind === "url" ? row.content : finding.source_url ?? source.sourceUrl,
@@ -100,7 +108,14 @@ export async function processIntakeRows(
 
       if (findings.length > 0) {
         const { error: insertError } = await atlasDb().from("findings").insert(findings);
-        if (insertError) throw insertError;
+        if (isMissingChannelError(insertError)) {
+          const { error: retryError } = await atlasDb()
+            .from("findings")
+            .insert(findings.map(({ channel: _channel, ...finding }) => finding));
+          if (retryError) throw retryError;
+        } else if (insertError) {
+          throw insertError;
+        }
       }
 
       insertedCount += findings.length;
@@ -138,6 +153,7 @@ Rules:
 - Return a JSON array only.
 - Max ${maxFindings} findings.
 - Each object must include: property, claim, evidence, source_url, confidence, tags.
+- Include channel as one of: seo, email, tiktok, instagram, youtube, x, community, general. Use "x" for X/Twitter links.
 - property must be one of: store, huh, restaurant, general.
 - Every tag array must include "intake", "pulse", and "x".
 - Focus on positioning, hook, audience, content format, social proof, and what Sam can steal ethically.
@@ -155,6 +171,7 @@ Rules:
 - Return a JSON array only.
 - Max ${maxFindings} findings.
 - Each object must include: property, claim, evidence, source_url, confidence, tags.
+- Include channel as one of: seo, email, tiktok, instagram, youtube, x, community, general.
 - property must be one of: store, huh, restaurant, general.
 - Every tag array must include "intake".
 - Tie each claim to specific evidence from the dropped source.
@@ -182,6 +199,7 @@ Rules:
 - Return a JSON array only.
 - Max ${maxFindings} findings.
 - Each object must include: property, claim, evidence, source_url, confidence, tags.
+- Include channel as one of: seo, email, tiktok, instagram, youtube, x, community, general.
 - property must be one of: store, huh, restaurant, general.
 - Every tag array must include "intake" and "photo".
 - Answer what this is, what marketing mechanics are at work, what's stealable, and what's the hook.
@@ -290,6 +308,10 @@ async function loadIntakeSource(row: IntakeRow): Promise<LoadedSource> {
 
 function isImageExtension(extension: string | undefined) {
   return extension === "jpg" || extension === "jpeg" || extension === "png" || extension === "webp";
+}
+
+function isMissingChannelError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(error?.message?.includes("channel"));
 }
 
 function imageMediaType(extension: string | undefined): "image/jpeg" | "image/png" | "image/webp" {

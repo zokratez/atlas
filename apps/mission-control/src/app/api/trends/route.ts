@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/atlas/auth";
 import { atlasDb } from "@/lib/atlas/supabase";
 
@@ -21,6 +21,7 @@ type FindingRow = {
   created_at: string;
   agent: string;
   property: string;
+  channel?: string | null;
   claim: string;
   evidence: string | null;
   source_url: string | null;
@@ -41,8 +42,8 @@ type ActionRow = {
   created_at: string;
   agent: string;
   property: string;
-  kind: string;
   channel: string | null;
+  kind: string;
   payload: Record<string, unknown>;
   status: string;
   compliance_status: string;
@@ -62,15 +63,18 @@ type ExperimentRow = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await requireApiUser();
   if (user instanceof NextResponse) return user;
+  const { searchParams } = new URL(request.url);
+  const propertyFilter = searchParams.get("property") ?? "all";
+  const channelFilter = searchParams.get("channel") ?? "all";
 
   const [costsResult, findingsResult, decisionsResult, experimentsResult] = await Promise.all([
     atlasDb().from("costs").select("id, created_at, agent, provider, tokens_in, tokens_out, usd").order("created_at"),
     atlasDb()
       .from("findings")
-      .select("id, created_at, agent, property, claim, evidence, source_url, confidence, tags")
+      .select("*")
       .order("created_at"),
     atlasDb().from("decisions").select("id, created_at, action_id, decision, reason").order("created_at"),
     atlasDb()
@@ -91,7 +95,7 @@ export async function GET() {
   if (actionIds.length > 0) {
     const { data, error } = await atlasDb()
       .from("actions")
-      .select("id, created_at, agent, property, kind, channel, payload, status, compliance_status")
+      .select("id, created_at, agent, property, channel, kind, payload, status, compliance_status")
       .in("id", actionIds);
 
     if (error) throw error;
@@ -99,8 +103,11 @@ export async function GET() {
   }
 
   const costs = (costsResult.data ?? []) as CostRow[];
-  const findings = (findingsResult.data ?? []) as FindingRow[];
-  const experiments = (experimentsResult.data ?? []) as ExperimentRow[];
+  const allFindings = (findingsResult.data ?? []) as FindingRow[];
+  const findings = allFindings.filter((finding) => matchesFilters(finding, propertyFilter, channelFilter));
+  const experiments = ((experimentsResult.data ?? []) as ExperimentRow[]).filter((experiment) =>
+    matchesFilters({ property: experiment.property, channel: "general" }, propertyFilter, channelFilter),
+  );
 
   const costsByDay: Record<string, CostRow[]> = {};
   const costMap = new Map<string, { date: string; anthropic: number; xai: number; other: number; total: number }>();
@@ -133,6 +140,8 @@ export async function GET() {
   const curationByDay: Record<string, Array<DecisionRow & { action: ActionRow | null }>> = {};
   const curationMap = new Map<string, { date: string; approve: number; kill: number }>();
   for (const row of decisions) {
+    const action = row.action_id ? actionsById.get(row.action_id) ?? null : null;
+    if (!action || !matchesFilters(action, propertyFilter, channelFilter)) continue;
     const decision = decisionKey(row.decision);
     if (!decision) continue;
     const date = dayKey(row.created_at);
@@ -141,7 +150,7 @@ export async function GET() {
     curationMap.set(date, bucket);
     curationByDay[date] = [
       ...(curationByDay[date] ?? []),
-      { ...row, action: row.action_id ? actionsById.get(row.action_id) ?? null : null },
+      { ...row, action },
     ];
   }
 
@@ -158,6 +167,7 @@ export async function GET() {
       curationByDay,
       experimentsById: Object.fromEntries(experiments.map((experiment) => [experiment.id, experiment])),
     },
+    counts: buildCounts(allFindings),
   });
 }
 
@@ -184,6 +194,39 @@ function findingAgentKey(row: FindingRow): FindingAgentKey {
 function decisionKey(decision: string): DecisionKey | null {
   if (decision === "approve" || decision === "kill") return decision;
   return null;
+}
+
+function matchesFilters(row: { property?: string | null; channel?: string | null }, property: string, channel: string) {
+  const rowChannel = normalizeChannel(row.channel);
+  return (property === "all" || row.property === property) && (channel === "all" || rowChannel === channel);
+}
+
+function normalizeChannel(value: string | null | undefined) {
+  const normalized = (value ?? "general").toLowerCase();
+  if (normalized === "ig") return "instagram";
+  if (normalized === "yt") return "youtube";
+  if (normalized === "twitter") return "x";
+  return normalized;
+}
+
+function buildCounts(rows: Array<{ property?: string | null; channel?: string | null }>) {
+  const counts = {
+    properties: { all: 0, store: 0, huh: 0, restaurant: 0, general: 0 },
+    channels: { all: 0, seo: 0, email: 0, tiktok: 0, instagram: 0, youtube: 0, x: 0, community: 0 },
+  };
+
+  for (const row of rows) {
+    const property = row.property === "store" || row.property === "huh" || row.property === "restaurant" ? row.property : "general";
+    const channel = normalizeChannel(row.channel);
+    counts.properties.all += 1;
+    counts.properties[property] += 1;
+    counts.channels.all += 1;
+    if (channel === "seo" || channel === "email" || channel === "tiktok" || channel === "instagram" || channel === "youtube" || channel === "x" || channel === "community") {
+      counts.channels[channel] += 1;
+    }
+  }
+
+  return counts;
 }
 
 function roundCosts(row: { date: string; anthropic: number; xai: number; other: number; total: number }) {

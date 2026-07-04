@@ -14,6 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { FilterBar, emptyCounts, useAtlasFilters, type AtlasFilters } from "./FilterBar";
 
 type CostPoint = {
   date: string;
@@ -114,6 +115,7 @@ type TrendsPayload = {
     curationByDay: Record<string, DecisionReceipt[]>;
     experimentsById: Record<string, ExperimentReceipt>;
   };
+  counts: ReturnType<typeof emptyCounts>;
 };
 
 type Selection =
@@ -140,19 +142,24 @@ const colors = {
 };
 
 export function TrendsClient() {
+  const { filters, setFilters, ready } = useAtlasFilters();
   const [payload, setPayload] = useState<TrendsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [counts, setCounts] = useState(emptyCounts());
 
   useEffect(() => {
-    fetch("/api/trends")
+    if (!ready) return;
+    setLoading(true);
+    fetch(`/api/trends?${queryString(filters)}`)
       .then((response) => response.json())
       .then((data: TrendsPayload) => {
         setPayload(data);
+        setCounts(data.counts ?? emptyCounts());
         setSelection(firstSelection(data));
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [filters, ready]);
 
   const receiptCount = useMemo(() => {
     if (!payload || !selection) return 0;
@@ -168,6 +175,8 @@ export function TrendsClient() {
         </div>
         <span className="counter">{loading ? "--" : receiptCount}</span>
       </div>
+
+      <FilterBar filters={filters} counts={counts} onChange={setFilters} />
 
       {loading ? (
         <div className="panel skeleton" />
@@ -349,9 +358,19 @@ function ReceiptPanel({ payload, selection }: { payload: TrendsPayload; selectio
 
   if (selection.kind === "curation") {
     const rows = payload.receipts.curationByDay[selection.key] ?? [];
+    const killReasons = reasonBreakdown(rows);
     return (
       <section className="receipt-panel">
         <ReceiptHeading label="Taste-training receipts" selection={selection.key} count={rows.length} href="/queue" />
+        {killReasons.length > 0 ? (
+          <div className="tag-row">
+            {killReasons.map(([reason, count]) => (
+              <span className="chip failed" key={reason}>
+                {reason} {count}
+              </span>
+            ))}
+          </div>
+        ) : null}
         {rows.map((row) => (
           <article className="receipt-row tall" key={row.id}>
             <div>
@@ -418,6 +437,13 @@ function selectDay(state: unknown, kind: "costs" | "findings" | "curation", setS
   if (activeLabel) setSelection({ kind, key: activeLabel });
 }
 
+function queryString(filters: AtlasFilters) {
+  const params = new URLSearchParams();
+  if (filters.property !== "all") params.set("property", filters.property);
+  if (filters.channel !== "all") params.set("channel", filters.channel);
+  return params.toString();
+}
+
 function selectExperiment(row: unknown, setSelection: (selection: Selection) => void) {
   const payload =
     typeof row === "object" && row !== null && "payload" in row
@@ -460,6 +486,15 @@ function actionTitle(action: ActionReceipt) {
   if (typeof hook === "string" && hook.trim()) return hook;
   if (typeof title === "string" && title.trim()) return title;
   return `${action.property} ${action.kind}`;
+}
+
+function reasonBreakdown(rows: DecisionReceipt[]) {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.decision !== "kill" || !row.reason) continue;
+    counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1);
+  }
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
 }
 
 function formatDate(value: string) {

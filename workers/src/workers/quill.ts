@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { jobConfig, loadConfig } from "../lib/config.js";
+import { inferChannel, normalizeChannel } from "../lib/channel.js";
 import { atlasDb } from "../lib/db.js";
 import { GovernorStop, ModelGovernor } from "../lib/governor.js";
 import { parseJsonArray } from "../lib/json.js";
@@ -24,6 +25,30 @@ type Draft = {
   body: string;
   source_finding_ids?: string[];
   pattern_names?: string[];
+};
+
+type PatternRow = {
+  id: string;
+  property: string;
+  channel: string;
+  name: string;
+  description: string | null;
+  support_count: number;
+  source_finding_ids: string[] | null;
+  confidence: number | null;
+  status: "emerging" | "validated" | "fading" | "busted";
+};
+
+type DecisionRow = {
+  action_id: string | null;
+  decision: "approve" | "kill" | "edit" | "revive";
+  reason: string | null;
+};
+
+type TasteDecision = {
+  decision: "approve" | "kill";
+  reason: string | null;
+  excerpt: string;
 };
 
 const quillSoulPath = "/Users/samoteo/.openclaw/agents/quill/SOUL.md";
@@ -52,13 +77,20 @@ Atlas Quill doctrine:
 - Return JSON arrays only.`;
 }
 
-function buildUserPrompt(property: string, findings: FindingRow[], maxDrafts: number) {
+function buildUserPrompt(
+  property: string,
+  findings: FindingRow[],
+  patterns: PatternRow[],
+  tasteDecisions: TasteDecision[],
+  maxDrafts: number,
+) {
   return `Draft content from these fresh Atlas findings.
 
 Rules:
 - Return a JSON array only.
 - Max ${maxDrafts} drafts.
 - Each draft object: kind, channel, title, hook, body, source_finding_ids, pattern_names.
+- channel must be one of seo, email, tiktok, instagram, youtube, x, community, general.
 - kind must be one of post, email, page.
 - Keep each body under 90 words.
 - Drafts must be human-gated and ready for Sam's queue.
@@ -67,6 +99,12 @@ Rules:
 - Zero hype. Pain, truth, funny, real.
 
 Property: ${property}
+Sam taste memory:
+${JSON.stringify(tasteDecisions, null, 2)}
+
+Pattern ledger:
+${JSON.stringify(patterns, null, 2)}
+
 Findings:
 ${JSON.stringify(findings, null, 2)}`;
 }
@@ -81,6 +119,20 @@ async function recentFindings(property: string) {
 
   if (error) throw error;
   return (data ?? []) as FindingRow[];
+}
+
+async function recentPatterns(property: string) {
+  const { data, error } = await atlasDb()
+    .from("patterns")
+    .select("id, property, channel, name, description, support_count, source_finding_ids, confidence, status")
+    .eq("property", property)
+    .neq("status", "busted")
+    .order("support_count", { ascending: false })
+    .limit(20);
+
+  if (isMissingPatternsError(error)) return [];
+  if (error) throw error;
+  return (data ?? []) as PatternRow[];
 }
 
 async function todaysActionCount(property: string) {
@@ -98,52 +150,111 @@ async function todaysActionCount(property: string) {
   return count ?? 0;
 }
 
-function patternScore(draft: Draft, findings: FindingRow[]) {
+async function recentTasteDecisions(property: string) {
+  const { data: decisions, error } = await atlasDb()
+    .from("decisions")
+    .select("action_id, decision, reason")
+    .in("decision", ["approve", "kill"])
+    .order("created_at", { ascending: false })
+    .limit(40);
+
+  if (error) throw error;
+
+  const rows = (decisions ?? []) as DecisionRow[];
+  const actionIds = Array.from(new Set(rows.map((row) => row.action_id).filter(Boolean))) as string[];
+  if (actionIds.length === 0) return [];
+
+  const { data: actions, error: actionError } = await atlasDb()
+    .from("actions")
+    .select("id, property, payload")
+    .in("id", actionIds);
+
+  if (actionError) throw actionError;
+
+  const actionsById = new Map(
+    (actions ?? []).map((action) => [
+      action.id,
+      action as { id: string; property: string; payload: Record<string, unknown> },
+    ]),
+  );
+
+  return rows
+    .map((row) => {
+      const action = row.action_id ? actionsById.get(row.action_id) : null;
+      if (!action || action.property !== property || (row.decision !== "approve" && row.decision !== "kill")) {
+        return null;
+      }
+
+      return {
+        decision: row.decision,
+        reason: row.reason,
+        excerpt: excerptPayload(action.payload),
+      };
+    })
+    .filter((row): row is TasteDecision => Boolean(row))
+    .slice(0, 20);
+}
+
+function patternScore(draft: Draft, patterns: PatternRow[]) {
   const text = `${draft.title} ${draft.hook} ${draft.body}`.toLowerCase();
-  const patterns = new Set<string>();
+  const explicitNames = new Set((draft.pattern_names ?? []).map((name) => name.toLowerCase()));
+  const matched = patterns.filter((pattern) => {
+    const name = pattern.name.toLowerCase();
+    const words = name.split(/\W+/).filter((word) => word.length > 3);
+    const hasExplicitMatch = explicitNames.has(name);
+    const hasTextMatch = words.length > 0 && words.some((word) => text.includes(word));
+    return hasExplicitMatch || hasTextMatch;
+  });
 
-  for (const finding of findings) {
-    for (const tag of finding.tags ?? []) {
-      const normalized = tag.replace(/^buyer-mechanism[:-]?/i, "").replace(/-/g, " ");
-      if (normalized.length > 3 && text.includes(normalized.toLowerCase().split(" ")[0])) {
-        patterns.add(tag);
-      }
-    }
-
-    for (const phrase of ["proof", "testing", "COA", "conversation", "freeze", "trust", "hook", "personalization", "transcript", "photo"]) {
-      if (text.includes(phrase.toLowerCase()) && `${finding.claim} ${finding.evidence ?? ""}`.toLowerCase().includes(phrase.toLowerCase())) {
-        patterns.add(phrase);
-      }
-    }
-  }
-
-  for (const pattern of draft.pattern_names ?? []) patterns.add(pattern);
-
-  const names = Array.from(patterns).slice(0, 6);
+  const ranked = matched.sort((a, b) => patternWeight(b) - patternWeight(a)).slice(0, 6);
+  const names = ranked.map((pattern) => `${pattern.name} (${pattern.status}, seen ${pattern.support_count}x)`);
+  const score = ranked.reduce((sum, pattern) => sum + patternWeight(pattern), 0);
   return {
     count: names.length,
+    score,
+    source: "pattern-ledger",
     names,
     label: `matches ${names.length} proven patterns: ${names.length > 0 ? names.join(", ") : "none yet"}`,
     caveat: "prior, not prediction",
   };
 }
 
-async function insertDrafts(property: string, drafts: Draft[], findings: FindingRow[]) {
+function patternWeight(pattern: PatternRow) {
+  const statusWeight = pattern.status === "validated" ? 3 : pattern.status === "emerging" ? 1 : 0.25;
+  return statusWeight * Math.max(1, pattern.support_count) * Number(pattern.confidence ?? 0.5);
+}
+
+function excerptPayload(payload: Record<string, unknown>) {
+  return [payload.title, payload.hook, payload.body, payload.caption]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" / ")
+    .slice(0, 420);
+}
+
+function isMissingPatternsError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42P01" || Boolean(error?.message?.includes("patterns"));
+}
+
+async function insertDrafts(property: string, drafts: Draft[], patterns: PatternRow[]) {
   for (const draft of drafts) {
     const text = `${draft.title}\n${draft.hook}\n${draft.body}`;
     const compliance = runComplianceGate(property, text);
-    const score = patternScore(draft, findings);
+    const score = patternScore(draft, patterns);
+    const channel = normalizeChannel(draft.channel);
 
     const { error } = await atlasDb().from("actions").insert({
       agent: "atlas-quill",
       property,
       kind: draft.kind,
-      channel: draft.channel,
+      channel,
       payload: {
         title: draft.title,
         hook: draft.hook,
         body: draft.body,
         source_finding_ids: draft.source_finding_ids ?? [],
+        pattern_ids: patterns
+          .filter((pattern) => score.names.some((name) => name.startsWith(pattern.name)))
+          .map((pattern) => pattern.id),
         pattern_score: score,
       },
       compliance_status: compliance.status,
@@ -168,19 +279,30 @@ export async function main() {
 
     const findings = await recentFindings(property);
     if (findings.length === 0) continue;
+    const patterns = await recentPatterns(property);
+    const tasteDecisions = await recentTasteDecisions(property);
+    console.log(`atlas-quill tuning: ${tasteDecisions.length} decisions informed ${property}.`);
 
     const response = await governor.complete("atlas-quill", {
       system: buildSystemPrompt(property),
       maxTokens: 4000,
       temperature: 0.4,
-      messages: [{ role: "user", content: buildUserPrompt(property, findings, remaining) }],
+      messages: [{ role: "user", content: buildUserPrompt(property, findings, patterns, tasteDecisions, remaining) }],
     });
 
     const drafts = parseJsonArray<Draft>(response.text)
       .filter((draft) => ["post", "email", "page"].includes(draft.kind) && draft.title && draft.body)
+      .map((draft) => ({
+        ...draft,
+        channel: inferChannel({
+          channel: draft.channel,
+          tags: draft.pattern_names,
+          text: `${draft.title} ${draft.hook} ${draft.body}`,
+        }),
+      }))
       .slice(0, remaining);
 
-    await insertDrafts(property, drafts, findings);
+    await insertDrafts(property, drafts, patterns);
     inserted += drafts.length;
   }
 

@@ -1,4 +1,5 @@
 import { jobConfig, loadConfig, type ResearchTarget } from "../lib/config.js";
+import { normalizeChannel } from "../lib/channel.js";
 import { atlasDb } from "../lib/db.js";
 import { loadScoutDoctrine } from "../lib/doctrine.js";
 import { GovernorStop, ModelGovernor } from "../lib/governor.js";
@@ -12,6 +13,7 @@ type PulseFinding = {
   source_url: string;
   confidence: number;
   tags: string[];
+  channel?: string;
 };
 
 function buildSystemPrompt() {
@@ -30,6 +32,7 @@ Rules:
 - Return a JSON array only.
 - Max ${maxFindings} findings total.
 - Each object must include: property, claim, evidence, source_url, confidence, tags.
+- Include channel. Pulse defaults to "x" unless the finding is clearly about another channel.
 - property must be one of: store, huh, restaurant, general.
 - Use property "huh" for language-app marketing. Use property "general" for peptide-adjacent DTC and channel tactics.
 - evidence should name the live discussion pattern and cite enough context to audit the claim.
@@ -57,19 +60,31 @@ function normalizeProperty(finding: PulseFinding) {
 async function insertPulseFindings(findings: PulseFinding[]) {
   if (findings.length === 0) return;
 
-  const { error } = await atlasDb().from("findings").insert(
-    findings.map((finding) => ({
+  const rows = findings.map((finding) => ({
       agent: "atlas-scout-pulse",
       property: normalizeProperty(finding),
+      channel: normalizeChannel(finding.channel ?? "x"),
       claim: finding.claim,
       evidence: finding.evidence,
       source_url: finding.source_url,
       confidence: Math.max(0, Math.min(1, Number(finding.confidence ?? 0.5))),
       tags: Array.from(new Set([...(finding.tags ?? []), "pulse"])),
-    })),
-  );
+    }));
+
+  const { error } = await atlasDb().from("findings").insert(rows);
+  if (isMissingChannelError(error)) {
+    const { error: retryError } = await atlasDb()
+      .from("findings")
+      .insert(rows.map(({ channel: _channel, ...row }) => row));
+    if (retryError) throw retryError;
+    return;
+  }
 
   if (error) throw error;
+}
+
+function isMissingChannelError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(error?.message?.includes("channel"));
 }
 
 export async function main() {
