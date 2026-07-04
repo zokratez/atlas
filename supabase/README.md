@@ -5,3 +5,7 @@ This repo NEVER pushes migration history. Project `vrxmnuvedakrrpvetybq`'s histo
 The migration file in `supabase/migrations/0001_atlas_schema.sql` is the canonical record for Atlas schema v1. Do not run `supabase db push` from this repo.
 
 `supabase/config.toml` records the currently applied API exposure needed by Mission Control server routes: `atlas` is included in PostgREST exposed schemas, while RLS stays enabled and no anon/authenticated policies are created. Do not run `supabase config push` from this repo unless you first verify the full diff, because the Supabase CLI may also offer unrelated Auth config changes for the shared `via` project.
+
+## Schema-Gated Report Protocol
+
+Every schema-gated report must include the full contents of the relevant migration file(s) in the message to Claude. Claude applies that SQL verbatim through MCP, then Codex verifies the live shape before deploy. No spec inference, no summarized DDL, and no Supabase CLI push from this repo.

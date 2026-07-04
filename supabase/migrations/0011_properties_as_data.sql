@@ -8,10 +8,10 @@ create table if not exists atlas.properties (
 
 insert into atlas.properties (slug, display_name, color, active)
 values
-  ('store', 'PACO Peptide', '#7dd3fc', true),
-  ('huh', 'Huh? Learn Spanish', '#fda4af', true),
-  ('restaurant', 'Motel West / PACO', '#facc15', true),
-  ('general', 'General', '#a3a3a3', true)
+  ('store', 'PACO Peptide', '#C7B9A6', true),
+  ('huh', 'Huh? Learn Spanish', '#4ade80', true),
+  ('restaurant', 'Motel West / PACO', '#f59e0b', true),
+  ('general', 'General', '#94a3b8', true)
 on conflict (slug) do update
 set display_name = excluded.display_name,
     color = excluded.color,

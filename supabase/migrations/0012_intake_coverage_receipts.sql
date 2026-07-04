@@ -18,5 +18,10 @@ alter table atlas.intake
 alter table atlas.findings
   add column if not exists intake_coverage jsonb;
 
+-- Live also has nullable atlas.findings.coverage_pct and
+-- atlas.findings.study_method from the first manual apply.
+-- They are intentionally unused by the app; intake_coverage is the
+-- canonical finding-level receipt shape.
+
 create index if not exists atlas_intake_coverage_idx
   on atlas.intake (coverage_pct);
