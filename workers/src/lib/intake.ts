@@ -12,6 +12,9 @@ type IntakeRow = {
   content: string;
   property: string | null;
   notes?: string | null;
+  tags?: string[] | null;
+  submitter_email?: string | null;
+  receipt_token?: string | null;
 };
 
 type IntakeFinding = {
@@ -61,21 +64,26 @@ export async function processIntakeRows(
   scoutConfig: ResolvedJobConfig,
   system: string,
   remainingCap: number,
+  options: { publicDemoOnly?: boolean } = {},
 ) {
   if (remainingCap <= 0) return 0;
 
   const { data, error } = await atlasDb()
     .from("intake")
-    .select("id, kind, content, property, notes")
+    .select("id, kind, content, property, notes, tags, submitter_email, receipt_token")
     .eq("status", "new")
     .order("created_at", { ascending: true })
-    .limit(10);
+    .limit(options.publicDemoOnly ? 20 : 10);
 
   if (error) throw error;
 
   let insertedCount = 0;
+  const rows = ((data ?? []) as IntakeRow[])
+    .filter((row) => !options.publicDemoOnly || isPublicDemo(row))
+    .sort((a, b) => Number(isPublicDemo(b)) - Number(isPublicDemo(a)))
+    .slice(0, 10);
 
-  for (const row of (data ?? []) as IntakeRow[]) {
+  for (const row of rows) {
     if (insertedCount >= remainingCap) break;
 
     try {
@@ -132,6 +140,7 @@ export async function processIntakeRows(
           tags: Array.from(new Set([
             ...(finding.tags ?? []),
             "intake",
+            ...(isPublicDemo(row) ? ["public_demo"] : []),
             ...(source.image ? ["photo"] : []),
             ...(source.kind === "x-url" ? ["pulse", "x"] : []),
           ])),
@@ -169,6 +178,7 @@ export async function processIntakeRows(
 
       insertedCount += findings.length;
       await markIntake(row.id, "processed", `created ${findings.length} findings`, insertedFindingIds, coverage);
+      await sendPublicDemoReceipt(row, insertedFindingIds, coverage);
     } catch (error) {
       if (error instanceof GovernorStop) throw error;
 
@@ -218,7 +228,7 @@ ${row.content}`;
 }
 
 function buildIntakePrompt(row: IntakeRow, text: string, maxFindings: number) {
-  return `Dissect this Sam-provided intake item into Atlas marketing findings.
+  return `Dissect this ${isPublicDemo(row) ? "public demo" : "Sam-provided intake"} item into Atlas marketing findings.
 
 Rules:
 - Return a JSON array only.
@@ -233,6 +243,7 @@ Rules:
 - observed_metrics may include views, likes, comments, shares, followers only when visible. Unreadable metrics must be null.
 - authenticity must be high, medium, low, or unknown. Label it as heuristic, not accusation: ratios flag anomalies, they don't prove purchase.
 - Prefer buyer-producing hooks, objections, proof devices, formats, and next tests.
+- If this is a public demo, dissect only the submitted artifact. Do not make claims about Atlas, Sam, PACO, health outcomes, or conversion promises.
 - Reject generic summaries.
 
 Intake:
@@ -250,7 +261,7 @@ ${JSON.stringify(
 }
 
 function buildPhotoPrompt(row: IntakeRow, maxFindings: number) {
-  return `Dissect this Sam-provided photo into Atlas marketing findings.
+  return `Dissect this ${isPublicDemo(row) ? "public demo" : "Sam-provided"} photo into Atlas marketing findings.
 
 Rules:
 - Return a JSON array only.
@@ -273,6 +284,7 @@ Rules:
 - Assess comment quality if visible: generic/emoji-only/bot-cadence vs substantive.
 - authenticity must be high, medium, low, or unknown with a one-line reason. Label it as heuristic, not accusation: ratios flag anomalies, they don't prove purchase.
 - Reject generic visual description.
+- If this is a public demo, dissect only the submitted image. Do not make claims about Atlas, Sam, PACO, health outcomes, or conversion promises.
 
 Intake:
 ${JSON.stringify(
@@ -285,6 +297,105 @@ ${JSON.stringify(
   null,
   2,
 )}`;
+}
+
+async function sendPublicDemoReceipt(row: IntakeRow, findingIds: string[], coverage: IntakeCoverage) {
+  if (!isPublicDemo(row) || !row.submitter_email || !row.receipt_token) return;
+
+  const baseUrl = process.env.PUBLIC_DEMO_BASE_URL;
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.PUBLIC_DEMO_EMAIL_FROM;
+  const receiptUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/receipt/${row.receipt_token}` : null;
+  const findings = findingIds.length > 0 ? await loadReceiptFindings(findingIds) : [];
+  const html = renderDemoEmail({ receiptUrl, findings, coverage });
+  const result = {
+    receipt_url: receiptUrl,
+    findings_count: findings.length,
+    email_provider: apiKey && from ? "resend" : "not_configured",
+  };
+
+  if (apiKey && from) {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: row.submitter_email,
+        subject: "Your Atlas dissection is ready",
+        html,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      await updatePublicDemoResult(row.id, { ...result, email_status: "failed", email_error: text.slice(0, 300) });
+      return;
+    }
+
+    await updatePublicDemoResult(row.id, { ...result, email_status: "sent" }, true);
+    return;
+  }
+
+  await updatePublicDemoResult(row.id, { ...result, email_status: "skipped_missing_env" });
+}
+
+async function loadReceiptFindings(ids: string[]) {
+  const { data, error } = await atlasDb()
+    .from("findings")
+    .select("claim, evidence, channel, confidence, tags")
+    .in("id", ids);
+
+  if (error) return [];
+  return data ?? [];
+}
+
+async function updatePublicDemoResult(id: string, result: Record<string, unknown>, delivered = false) {
+  const { error } = await atlasDb()
+    .from("intake")
+    .update({
+      public_demo_result: result,
+      delivered_at: delivered ? new Date().toISOString() : null,
+    })
+    .eq("id", id);
+
+  if (error?.code === "42703") return;
+  if (error) throw error;
+}
+
+function renderDemoEmail(input: {
+  receiptUrl: string | null;
+  findings: Array<{ claim: string; evidence: string | null; channel?: string | null; confidence?: number | null }>;
+  coverage: IntakeCoverage;
+}) {
+  const findingsHtml = input.findings.map((finding) => `
+    <section style="border:1px solid #2b3328;border-radius:8px;padding:14px;margin:12px 0;background:#10130f;">
+      <h2 style="margin:0 0 8px;color:#f1f5ea;font-size:18px;line-height:1.25;">${escapeHtml(finding.claim)}</h2>
+      <p style="margin:0;color:#9da893;line-height:1.55;">${escapeHtml(finding.evidence ?? "")}</p>
+      <p style="margin:10px 0 0;color:#5ed7c6;font-size:12px;">${escapeHtml(finding.channel ?? "general")} · ${Math.round(Number(finding.confidence ?? 0) * 100)}%</p>
+    </section>
+  `).join("");
+
+  return `
+    <main style="font-family:IBM Plex Mono,Menlo,monospace;background:#070806;color:#f1f5ea;padding:24px;">
+      <p style="color:#5ed7c6;text-transform:uppercase;font-size:12px;font-weight:700;">Atlas dissection</p>
+      <h1 style="font-size:32px;line-height:1;margin:0 0 12px;">Your post autopsy is ready.</h1>
+      <p style="color:#9da893;line-height:1.6;">Studied ${input.coverage.coverage_pct}% via ${escapeHtml(input.coverage.method.replace("_", " "))}. Receipts over opinions.</p>
+      ${findingsHtml || "<p>No findings were produced from this source.</p>"}
+      ${input.receiptUrl ? `<p><a href="${input.receiptUrl}" style="color:#5ed7c6;">Open the shareable receipt</a></p>` : ""}
+      <p style="color:#6f7a68;font-size:12px;line-height:1.5;">You received this because you requested a free Atlas dissection. You may receive Atlas updates; unsubscribe instructions will be included once outbound email is fully configured.</p>
+    </main>
+  `;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 async function markIntake(
@@ -508,6 +619,10 @@ function isMissingCoverageError(error: { code?: string; message?: string } | nul
 
 function isOwnPostDrop(row: IntakeRow) {
   return /\bMY POST\b/i.test(`${row.content}\n${row.notes ?? ""}`);
+}
+
+function isPublicDemo(row: IntakeRow) {
+  return Array.isArray(row.tags) && row.tags.includes("public_demo");
 }
 
 async function findMatchingOwnAction(property: string, channel: string, specimen: SpecimenDraft, row: IntakeRow) {

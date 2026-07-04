@@ -74,7 +74,7 @@ function isMissingChannelError(error: { code?: string; message?: string } | null
   return error?.code === "42703" || Boolean(error?.message?.includes("channel"));
 }
 
-export async function main() {
+export async function runScout(options: { intakeOnly?: boolean; publicDemoOnly?: boolean } = {}) {
   const config = loadConfig();
   const scoutConfig = jobConfig(config, "scout");
   const pulseConfig = jobConfig(config, "scout-pulse");
@@ -88,7 +88,13 @@ export async function main() {
     scoutConfig,
     system,
     scoutConfig.max_findings_per_run,
+    { publicDemoOnly: options.publicDemoOnly },
   );
+
+  if (options.intakeOnly) {
+    console.log(`atlas-scout prepared ${intakeCount} intake findings.`);
+    return;
+  }
 
   for (const target of config.research_targets) {
     if (allFindings.length + intakeCount >= scoutConfig.max_findings_per_run) break;
@@ -127,6 +133,10 @@ export async function main() {
   const capped = allFindings.slice(0, scoutConfig.max_findings_per_run - intakeCount);
   await insertFindings(capped);
   console.log(`atlas-scout prepared ${intakeCount + capped.length} findings.`);
+}
+
+export async function main() {
+  await runScout();
 }
 
 if (isDirectRun(import.meta.url)) {

@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { PublicDemoLanding } from "@/components/PublicDemoLanding";
 
 export default function HomePage() {
-  redirect("/today");
+  return <PublicDemoLanding />;
 }

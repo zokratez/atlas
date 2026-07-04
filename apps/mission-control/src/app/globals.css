@@ -1095,6 +1095,137 @@ a {
   color: var(--green);
 }
 
+.public-page {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.public-hero {
+  display: grid;
+  min-height: 88vh;
+  align-items: center;
+  gap: 24px;
+  padding: 22px 0;
+}
+
+.public-hero-copy {
+  display: grid;
+  gap: 14px;
+}
+
+.public-hero h1,
+.receipt-page h1 {
+  max-width: 920px;
+  margin: 0;
+  font-size: clamp(42px, 13vw, 110px);
+  line-height: 0.9;
+  letter-spacing: 0;
+}
+
+.public-hero p,
+.public-section > p,
+.brief-pitch p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.public-drop-box {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(94, 215, 198, 0.38);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(94, 215, 198, 0.08), transparent), var(--surface);
+  padding: 14px;
+}
+
+.public-drop-box label {
+  color: var(--low);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.public-drop-box textarea,
+.public-drop-box input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090b08;
+  color: var(--text);
+  padding: 12px;
+  font-size: 14px;
+}
+
+.public-drop-box textarea {
+  min-height: 180px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.public-disclosure {
+  color: var(--low);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.proof-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border-block: 1px solid var(--line);
+  padding: 14px 0;
+}
+
+.proof-strip span {
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.public-section {
+  display: grid;
+  gap: 12px;
+  padding: 48px 0;
+}
+
+.public-section h2 {
+  margin: 0;
+  font-size: clamp(24px, 7vw, 54px);
+  line-height: 1;
+}
+
+.sample-autopsy {
+  max-width: 860px;
+}
+
+.sample-autopsy h2 {
+  margin: 0;
+  font-size: clamp(20px, 5vw, 36px);
+}
+
+.brief-pitch {
+  padding-bottom: 96px;
+}
+
+.receipt-page {
+  max-width: 920px;
+}
+
+.receipt-proof {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 @keyframes shimmer {
   0% {
     background-position: -240px 0;
@@ -1131,6 +1262,10 @@ a {
 
   .chart-panel.wide {
     grid-column: 1 / -1;
+  }
+
+  .public-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 460px);
   }
 }
 
@@ -1187,5 +1322,10 @@ a {
 
   .card-line {
     grid-template-columns: auto minmax(0, 1fr) auto auto;
+  }
+
+  .proof-strip,
+  .receipt-proof {
+    grid-template-columns: 1fr;
   }
 }
