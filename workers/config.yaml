@@ -21,39 +21,49 @@ jobs:
     estimated_usd_per_million_input_tokens: 1.25
     estimated_usd_per_million_output_tokens: 2.50
 properties:
+  - store
   - huh
   - paco
   - general
 research_targets:
-  - name: peptide-adjacent DTC brands
-    property: general
-    tags: [paco, peptide-adjacent, dtc, positioning]
+  - name: research-adjacent DTC and trust-based wellness marketing
+    property: store
+    tags: [store, research-adjacent, dtc, wellness, trust-layer]
     urls:
-      - https://www.hims.com/
-      - https://www.ro.co/
+      - https://www.peptidesciences.com/
+      - https://www.limitlesslifenootropics.com/
+      - https://swisschems.is/
+      - https://marekhealth.com/
       - https://www.functionhealth.com/
       - https://www.levels.com/
+      - https://www.livemomentous.com/
+      - https://www.thorne.com/
     questions:
-      - What acquisition hooks, trust devices, and conversion claims are visible?
-      - What can PACO borrow without making medical claims?
-  - name: language-app marketing
+      - How do research-peptide/RUO vendors handle COA transparency, lot verification, and educational content? Study marketing mechanics only.
+      - How do high-trust DTC wellness brands convert skeptics via proof, testing, and verification instead of claims?
+      - What SEO and email-capture mechanics appear around compound-name plus COA, purity, and verified queries in regulated niches?
+  - name: TikTok-native language-app growth
     property: huh
-    tags: [huh, language-learning, app-marketing, spanish]
+    tags: [huh, language-learning, tiktok, spanish, organic-growth]
     urls:
       - https://www.duolingo.com/
-      - https://www.babbel.com/
       - https://www.speak.com/
-      - https://www.languagereactor.com/
+      - https://praktika.ai/
+      - https://www.jumpspeak.com/
+      - https://www.tiktok.com/@duolingo
+      - https://www.tiktok.com/@speak
     questions:
-      - What promise is used for real conversation confidence?
-      - What proof, demo, or social loop is emphasized?
-  - name: channel tactics
+      - What hook structures, posting cadence, UGC formats, and faceless account patterns are used by Duolingo, Speak, Praktika, and Jumpspeak on TikTok?
+      - What can Atlas learn from Duolingo's unhinged-mascot organic playbook without copying the mascot premise?
+      - What Spanish-learning hooks are engaging Latino-market and heritage-speaker audiences?
+  - name: live X pulse for peptides, language learning, and creator algorithms
     property: general
-    tags: [channel-tactics, short-form, acquisition]
+    tags: [pulse, x, live-discussion, peptide-community, language-learning, creator-algorithms]
     urls:
-      - https://www.tiktok.com/business/en-US/blog
-      - https://creators.youtube.com/
-      - https://www.redditforbusiness.com/business
+      - https://x.com/search?q=peptide%20research
+      - https://x.com/search?q=language%20learning
+      - https://x.com/search?q=algorithm%20creators
     questions:
-      - What tactical pattern can be tested cheaply in the next seven days?
-      - Which channel mechanics map to Huh or PACO?
+      - What real-time X vocabulary and sentiment are showing up in the peptide or research community?
+      - What language-learning fails or wins are going viral this week?
+      - What platform algorithm changes are creators complaining about right now?
