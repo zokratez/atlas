@@ -24,6 +24,9 @@ __pycache__/
 dist/
 build/
 
+# Supabase CLI local link state
+supabase/.temp/
+
 # OS/editor noise
 .DS_Store
 .idea/
