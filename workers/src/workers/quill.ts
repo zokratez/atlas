@@ -43,12 +43,16 @@ type DecisionRow = {
   action_id: string | null;
   decision: "approve" | "kill" | "edit" | "revive";
   reason: string | null;
+  operator_email: string | null;
 };
 
 type TasteDecision = {
   decision: "approve" | "kill";
   reason: string | null;
   excerpt: string;
+  operator_email: string | null;
+  role: "owner" | "curator" | "viewer" | "unknown";
+  weight: number;
 };
 
 const quillSoulPath = "/Users/samoteo/.openclaw/agents/quill/SOUL.md";
@@ -153,7 +157,7 @@ async function todaysActionCount(property: string) {
 async function recentTasteDecisions(property: string) {
   const { data: decisions, error } = await atlasDb()
     .from("decisions")
-    .select("action_id, decision, reason")
+    .select("action_id, decision, reason, operator_email")
     .in("decision", ["approve", "kill"])
     .order("created_at", { ascending: false })
     .limit(40);
@@ -162,6 +166,7 @@ async function recentTasteDecisions(property: string) {
 
   const rows = (decisions ?? []) as DecisionRow[];
   const actionIds = Array.from(new Set(rows.map((row) => row.action_id).filter(Boolean))) as string[];
+  const operatorEmails = Array.from(new Set(rows.map((row) => row.operator_email).filter(Boolean))) as string[];
   if (actionIds.length === 0) return [];
 
   const { data: actions, error: actionError } = await atlasDb()
@@ -177,22 +182,42 @@ async function recentTasteDecisions(property: string) {
       action as { id: string; property: string; payload: Record<string, unknown> },
     ]),
   );
+  const operatorsByEmail = new Map<string, "owner" | "curator" | "viewer">();
+  if (operatorEmails.length > 0) {
+    const { data: operators, error: operatorsError } = await atlasDb()
+      .from("operators")
+      .select("email, role")
+      .in("email", operatorEmails);
+    if (!isMissingOperatorsError(operatorsError) && operatorsError) throw operatorsError;
+    for (const operator of operators ?? []) {
+      if (operator.role === "owner" || operator.role === "curator" || operator.role === "viewer") {
+        operatorsByEmail.set(operator.email, operator.role);
+      }
+    }
+  }
 
-  return rows
+  const weighted = rows
     .map((row) => {
       const action = row.action_id ? actionsById.get(row.action_id) : null;
       if (!action || action.property !== property || (row.decision !== "approve" && row.decision !== "kill")) {
         return null;
       }
 
+      const role = row.operator_email ? operatorsByEmail.get(row.operator_email) ?? "unknown" : "unknown";
+      const weight = role === "owner" ? 2 : 1;
       return {
         decision: row.decision,
         reason: row.reason,
+        operator_email: row.operator_email,
+        role,
+        weight,
         excerpt: excerptPayload(action.payload),
       };
     })
     .filter((row): row is TasteDecision => Boolean(row))
-    .slice(0, 20);
+    .flatMap((row) => Array.from({ length: row.weight }, () => row));
+
+  return weighted.slice(0, 20);
 }
 
 function patternScore(draft: Draft, patterns: PatternRow[]) {
@@ -233,6 +258,10 @@ function excerptPayload(payload: Record<string, unknown>) {
 
 function isMissingPatternsError(error: { code?: string; message?: string } | null) {
   return error?.code === "42P01" || Boolean(error?.message?.includes("patterns"));
+}
+
+function isMissingOperatorsError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42P01" || Boolean(error?.message?.includes("operators"));
 }
 
 async function insertDrafts(property: string, drafts: Draft[], patterns: PatternRow[]) {
@@ -281,7 +310,11 @@ export async function main() {
     if (findings.length === 0) continue;
     const patterns = await recentPatterns(property);
     const tasteDecisions = await recentTasteDecisions(property);
-    console.log(`atlas-quill tuning: ${tasteDecisions.length} decisions informed ${property}.`);
+    const mix = tasteDecisions.reduce((counts, decision) => {
+      counts[decision.role] = (counts[decision.role] ?? 0) + 1;
+      return counts;
+    }, {} as Record<string, number>);
+    console.log(`atlas-quill tuning: ${tasteDecisions.length} weighted decisions informed ${property}; mix=${JSON.stringify(mix)}.`);
 
     const response = await governor.complete("atlas-quill", {
       system: buildSystemPrompt(property),

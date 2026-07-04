@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/atlas/auth";
+import { requireApiRole } from "@/lib/atlas/auth";
 import { getServiceClient } from "@/lib/atlas/supabase";
 
 const bucketName = "atlas-intake";
@@ -12,7 +12,7 @@ const allowedPrefixes = new Set([
 ]);
 
 export async function POST(request: Request) {
-  const user = await requireApiUser();
+  const user = await requireApiRole("curator");
   if (user instanceof NextResponse) return user;
 
   const body = await request.json().catch(() => ({}));

@@ -6,7 +6,7 @@ export default async function FeedPage() {
   const user = await requireAtlasUser();
 
   return (
-    <AppShell active="feed" userEmail={user.email}>
+    <AppShell active="feed" userEmail={user.email} userRole={user.role}>
       <FeedClient />
     </AppShell>
   );

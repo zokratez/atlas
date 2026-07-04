@@ -3,6 +3,7 @@ import { requireApiUser } from "@/lib/atlas/auth";
 import {
   getFeedCounts,
   listFindings,
+  listPinnedFindings,
   listPatterns,
   listSpecimens,
   type AtlasChannelFilter,
@@ -26,7 +27,8 @@ export async function GET(request: NextRequest) {
     resolvedMode === "patterns" ? listPatterns(filters) : Promise.resolve([]),
     getFeedCounts(),
   ]);
+  const pinned = resolvedMode === "findings" ? await listPinnedFindings(user.email, filters) : [];
   const specimens = resolvedMode === "specimens" ? await listSpecimens(filters) : [];
 
-  return NextResponse.json({ findings, patterns, specimens, counts });
+  return NextResponse.json({ findings, pinned, patterns, specimens, counts });
 }

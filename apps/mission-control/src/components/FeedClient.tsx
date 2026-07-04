@@ -14,6 +14,8 @@ type Finding = {
   source_url: string | null;
   confidence: number | null;
   tags: string[] | null;
+  cadence?: "weekly" | "monthly" | "quarterly" | null;
+  pinned?: boolean | null;
 };
 
 type Pattern = {
@@ -52,6 +54,7 @@ const densityKey = "atlas-density-v1";
 export function FeedClient() {
   const { filters, setFilters, ready } = useAtlasFilters();
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [pinned, setPinned] = useState<Finding[]>([]);
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [specimens, setSpecimens] = useState<Specimen[]>([]);
   const [mode, setMode] = useState<FeedMode>("findings");
@@ -74,6 +77,7 @@ export function FeedClient() {
       .then((response) => response.json())
       .then((payload) => {
         setFindings(payload.findings ?? []);
+        setPinned(payload.pinned ?? []);
         setPatterns(payload.patterns ?? []);
         setSpecimens(payload.specimens ?? []);
         setCounts(payload.counts ?? emptyCounts());
@@ -87,6 +91,11 @@ export function FeedClient() {
   }
 
   const count = mode === "patterns" ? patterns.length : mode === "specimens" ? specimens.length : findings.length;
+
+  async function dismissPinned(finding: Finding) {
+    await fetch(`/api/feed/${finding.id}/read`, { method: "POST" });
+    setPinned((current) => current.filter((item) => item.id !== finding.id));
+  }
 
   return (
     <section className={`view density-${density}`}>
@@ -124,6 +133,16 @@ export function FeedClient() {
       ) : null}
 
       <div className="dense-stack">
+        {mode === "findings" && pinned.map((finding) => (
+          <article className="panel pinned-card" key={`pinned:${finding.id}`}>
+            <div>
+              <p className="eyebrow">{finding.cadence ?? "weekly"} rhythm</p>
+              <h3>{finding.claim}</h3>
+            </div>
+            {finding.evidence ? <p>{finding.evidence}</p> : null}
+            <button className="secondary" type="button" onClick={() => dismissPinned(finding)}>Mark read</button>
+          </article>
+        ))}
         {loading ? <div className="panel skeleton" /> : null}
         {!loading && count === 0 ? <EmptyState text={emptyFilteredText(filters, mode)} /> : null}
         {mode === "findings" ? findings.map((finding) => (

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/atlas/auth";
+import { requireApiRole } from "@/lib/atlas/auth";
 import { setExperimentVerdict, type Verdict } from "@/lib/atlas/data";
 
 const verdicts = new Set(["keep", "kill", "blemish"]);
@@ -8,7 +8,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireApiUser();
+  const user = await requireApiRole("curator");
   if (user instanceof NextResponse) return user;
 
   const { id } = await context.params;

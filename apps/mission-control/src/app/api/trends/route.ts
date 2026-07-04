@@ -35,6 +35,7 @@ type DecisionRow = {
   action_id: string | null;
   decision: string;
   reason: string | null;
+  operator_email?: string | null;
 };
 
 type ActionRow = {
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest) {
       .from("findings")
       .select("*")
       .order("created_at"),
-    atlasDb().from("decisions").select("id, created_at, action_id, decision, reason").order("created_at"),
+    atlasDb().from("decisions").select("id, created_at, action_id, decision, reason, operator_email").order("created_at"),
     atlasDb()
       .from("experiments")
       .select("id, created_at, property, hypothesis, action, metric, verdict, verdict_at, notes")
@@ -158,6 +159,8 @@ export async function GET(request: NextRequest) {
 
   const curationByDay: Record<string, Array<DecisionRow & { action: ActionRow | null }>> = {};
   const curationMap = new Map<string, { date: string; approve: number; kill: number }>();
+  const curationOperatorMap = new Map<string, Record<string, string | number>>();
+  const operatorKeys = new Set<string>();
   for (const row of decisions) {
     const action = row.action_id ? actionsById.get(row.action_id) ?? null : null;
     if (!action || !matchesFilters(action, propertyFilter, channelFilter)) continue;
@@ -167,6 +170,11 @@ export async function GET(request: NextRequest) {
     const bucket = curationMap.get(date) ?? { date, approve: 0, kill: 0 };
     bucket[decision] += 1;
     curationMap.set(date, bucket);
+    const operator = safeOperatorKey(row.operator_email);
+    operatorKeys.add(operator);
+    const operatorBucket = curationOperatorMap.get(date) ?? { date };
+    operatorBucket[operator] = Number(operatorBucket[operator] ?? 0) + 1;
+    curationOperatorMap.set(date, operatorBucket);
     curationByDay[date] = [
       ...(curationByDay[date] ?? []),
       { ...row, action },
@@ -180,6 +188,8 @@ export async function GET(request: NextRequest) {
     costSeries: Array.from(costMap.values()).map(roundCosts),
     findingSeries: Array.from(findingMap.values()),
     curationSeries: Array.from(curationMap.values()),
+    curationOperatorSeries: Array.from(curationOperatorMap.values()),
+    operators: Array.from(operatorKeys),
     experiments: timeline,
     publishedResults,
     receipts: {
@@ -191,6 +201,10 @@ export async function GET(request: NextRequest) {
     },
     counts: buildCounts(allFindings),
   });
+}
+
+function safeOperatorKey(value: string | null | undefined) {
+  return (value ?? "unknown").replace(/[^a-zA-Z0-9@._-]/g, "_");
 }
 
 function buildPublishedResults(

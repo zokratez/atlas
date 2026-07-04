@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllowedEmails } from "@/lib/atlas/env";
+import { isOperatorEmail } from "@/lib/atlas/auth";
 import { getServiceClient } from "@/lib/atlas/supabase";
 
 export async function POST(request: NextRequest) {
   const { email } = (await request.json()) as { email?: string };
   const normalizedEmail = email?.trim().toLowerCase();
 
-  if (!normalizedEmail || !getAllowedEmails().includes(normalizedEmail)) {
+  if (!normalizedEmail || !(await isOperatorEmail(normalizedEmail))) {
     return NextResponse.json({ error: "Email is not allowed." }, { status: 403 });
   }
 
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     email: normalizedEmail,
     options: {
       emailRedirectTo: `${origin}/auth/callback`,
-      shouldCreateUser: false,
+      shouldCreateUser: true,
     },
   });
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/atlas/auth";
+import { requireApiRole } from "@/lib/atlas/auth";
 import {
   getQueueCounts,
   getQueueStatusCounts,
@@ -12,7 +12,7 @@ import {
 const statuses = new Set(["pending", "approved", "killed", "published"]);
 
 export async function GET(request: NextRequest) {
-  const user = await requireApiUser();
+  const user = await requireApiRole("curator");
   if (user instanceof NextResponse) return user;
 
   const { searchParams } = new URL(request.url);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/atlas/auth";
+import { requireApiRole } from "@/lib/atlas/auth";
 import { logActionResult, type ResultMetric } from "@/lib/atlas/data";
 
 const metrics = new Set(["views", "reach", "profile_visits", "link_taps", "follows", "custom"]);
@@ -9,7 +9,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireApiUser();
+  const user = await requireApiRole("curator");
   if (user instanceof NextResponse) return user;
 
   const { id } = await context.params;
@@ -33,7 +33,7 @@ export async function POST(
     return NextResponse.json({ error: "Invalid value." }, { status: 400 });
   }
 
-  await logActionResult(id, {
+  await logActionResult(id, user, {
     metric: body.metric,
     value,
     checkpoint: body.checkpoint,

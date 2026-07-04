@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiRole } from "@/lib/atlas/auth";
-import { markActionPublished } from "@/lib/atlas/data";
+import { requireApiUser } from "@/lib/atlas/auth";
+import { markFindingRead } from "@/lib/atlas/data";
 
 export async function POST(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireApiRole("curator");
+  const user = await requireApiUser();
   if (user instanceof NextResponse) return user;
 
   const { id } = await context.params;
-  await markActionPublished(id);
+  await markFindingRead(id, user.email);
   return NextResponse.json({ ok: true });
 }

@@ -39,6 +39,11 @@ type CurationPoint = {
   kill: number;
 };
 
+type CurationOperatorPoint = {
+  date: string;
+  [operator: string]: string | number;
+};
+
 type TimelinePoint = {
   id: string;
   label: string;
@@ -105,6 +110,7 @@ type DecisionReceipt = {
   action_id: string | null;
   decision: "approve" | "kill" | "edit";
   reason: string | null;
+  operator_email?: string | null;
   action: ActionReceipt | null;
 };
 
@@ -124,6 +130,8 @@ type TrendsPayload = {
   costSeries: CostPoint[];
   findingSeries: FindingPoint[];
   curationSeries: CurationPoint[];
+  curationOperatorSeries: CurationOperatorPoint[];
+  operators: string[];
   experiments: TimelinePoint[];
   publishedResults: PublishedResult[];
   receipts: {
@@ -255,6 +263,25 @@ export function TrendsClient() {
                   <Legend wrapperStyle={{ color: chartText, fontSize: 11 }} />
                   <Bar dataKey="approve" fill={colors.approve} radius={[4, 4, 0, 0]} />
                   <Bar dataKey="kill" fill={colors.kill} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartPanel>
+
+            <ChartPanel
+              title="Curation by operator"
+              empty={(payload.curationOperatorSeries ?? []).length === 0}
+              onPanelSelect={() => selectLatest(payload.curationOperatorSeries ?? [], "curation", setSelection)}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={payload.curationOperatorSeries ?? []} onClick={(state) => selectDay(state, "curation", setSelection)}>
+                  <CartesianGrid stroke={chartGrid} vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: chartText, fontSize: 10 }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fill: chartText, fontSize: 10 }} tickLine={false} axisLine={false} width={30} />
+                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  <Legend wrapperStyle={{ color: chartText, fontSize: 11 }} />
+                  {(payload.operators ?? []).map((operator, index) => (
+                    <Bar key={operator} dataKey={operator} stackId="operator" fill={operatorColor(index)} radius={[4, 4, 0, 0]} />
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             </ChartPanel>
@@ -417,7 +444,7 @@ function ReceiptPanel({ payload, selection }: { payload: TrendsPayload; selectio
           <article className="receipt-row tall" key={row.id}>
             <div>
               <strong>{row.decision}</strong>
-              <span>{row.action ? actionTitle(row.action) : "missing action"} / {formatTime(row.created_at)}</span>
+              <span>{row.action ? actionTitle(row.action) : "missing action"} / {row.operator_email ?? "unknown"} / {formatTime(row.created_at)}</span>
             </div>
             {row.reason ? <p>{row.reason}</p> : null}
           </article>
@@ -575,6 +602,10 @@ function reasonBreakdown(rows: DecisionReceipt[]) {
     counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1);
   }
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+}
+
+function operatorColor(index: number) {
+  return ["#7bd88f", "#5ed7c6", "#efc86a", "#ff9f6e", "#9da893"][index % 5];
 }
 
 function formatDate(value: string) {

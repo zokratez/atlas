@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setSessionCookies } from "@/lib/atlas/auth";
+import { isOperatorEmail, setSessionCookies } from "@/lib/atlas/auth";
 import { getServiceClient } from "@/lib/atlas/supabase";
 
 const allowedTypes = new Set(["email", "magiclink", "signup", "invite", "recovery"]);
@@ -30,6 +30,11 @@ export async function GET(request: NextRequest) {
 
   if (error || !data.session?.access_token) {
     return loginError(url.origin, error?.message ?? "session_not_returned");
+  }
+
+  const email = data.user?.email?.toLowerCase();
+  if (!email || !(await isOperatorEmail(email))) {
+    return loginError(url.origin, "email_not_allowlisted");
   }
 
   const response = NextResponse.redirect(new URL("/feed", url.origin));

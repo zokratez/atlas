@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllowedEmails } from "@/lib/atlas/env";
-import { setSessionCookies } from "@/lib/atlas/auth";
+import { isOperatorEmail, setSessionCookies } from "@/lib/atlas/auth";
 import { getServiceClient } from "@/lib/atlas/supabase";
 
 function loginRedirect(origin: string, reason: string) {
@@ -38,7 +37,7 @@ export async function POST(request: NextRequest) {
     return loginRedirect(request.nextUrl.origin, error?.message ?? "invalid_access_token");
   }
 
-  if (!getAllowedEmails().includes(email)) {
+  if (!(await isOperatorEmail(email))) {
     return loginRedirect(request.nextUrl.origin, "email_not_allowlisted");
   }
 

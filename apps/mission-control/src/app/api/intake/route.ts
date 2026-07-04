@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/atlas/auth";
+import { requireApiRole } from "@/lib/atlas/auth";
 import { atlasDb, getServiceClient } from "@/lib/atlas/supabase";
 
 const allowedProperties = new Set(["store", "huh", "restaurant", "general"]);
@@ -32,7 +32,7 @@ function fileExtension(name: string) {
 }
 
 export async function POST(request: Request) {
-  const user = await requireApiUser();
+  const user = await requireApiRole("curator");
   if (user instanceof NextResponse) return user;
 
   const form = await request.formData();

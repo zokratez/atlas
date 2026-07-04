@@ -164,7 +164,7 @@ a {
 
 .nav-tabs {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(9, minmax(0, 1fr));
   gap: 6px;
   padding: 12px 0;
   position: sticky;
@@ -270,6 +270,24 @@ a {
   min-height: 34px;
   border-color: rgba(239, 200, 106, 0.42);
   background: rgba(239, 200, 106, 0.1);
+}
+
+.pinned-card {
+  display: grid;
+  gap: 10px;
+  border-color: rgba(239, 200, 106, 0.5);
+  background: rgba(239, 200, 106, 0.08);
+}
+
+.pinned-card h3,
+.pinned-card p {
+  margin: 0;
+}
+
+.pinned-card p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .panel-meta,
@@ -515,6 +533,93 @@ a {
   color: var(--text);
   padding: 0 10px;
   font-size: 12px;
+}
+
+.date-picker {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090b08;
+  color: var(--text);
+  padding: 0 10px;
+  font-family: var(--font-plex-mono);
+}
+
+.calendar-week {
+  display: grid;
+  gap: 10px;
+}
+
+.calendar-day {
+  display: grid;
+  gap: 8px;
+}
+
+.calendar-day h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.calendar-lanes {
+  display: grid;
+  gap: 6px;
+}
+
+.calendar-lane {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 6px;
+  align-items: stretch;
+  min-height: 42px;
+}
+
+.lane-title {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--low);
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.calendar-card {
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  min-height: 42px;
+  border-color: rgba(94, 215, 198, 0.34);
+  background: rgba(94, 215, 198, 0.07);
+  text-align: left;
+}
+
+.calendar-card.asset {
+  border-color: rgba(239, 200, 106, 0.34);
+  background: rgba(239, 200, 106, 0.07);
+}
+
+.calendar-card.ghost {
+  border: 1px dashed rgba(157, 168, 147, 0.45);
+  background: transparent;
+  color: var(--low);
+  padding: 10px;
+  font-size: 11px;
+}
+
+.calendar-card strong {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-card span,
+.calendar-card small {
+  color: var(--muted);
+  font-size: 10px;
 }
 
 .spark-list {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/atlas/auth";
+import { requireApiRole } from "@/lib/atlas/auth";
 import { createAsset, listAssets, type AssetKind } from "@/lib/atlas/data";
 import { getServiceClient } from "@/lib/atlas/supabase";
 
@@ -10,7 +10,7 @@ const allowedKinds = new Set(["video", "image", "text"]);
 const maxSafekeepingVideoBytes = 50 * 1024 * 1024;
 
 export async function GET() {
-  const user = await requireApiUser();
+  const user = await requireApiRole("curator");
   if (user instanceof NextResponse) return user;
 
   const assets = await listAssets();
@@ -18,7 +18,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await requireApiUser();
+  const user = await requireApiRole("curator");
   if (user instanceof NextResponse) return user;
 
   const form = await request.formData();

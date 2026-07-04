@@ -1,5 +1,6 @@
 import { atlasDb } from "./supabase";
 import { runComplianceGate } from "./compliance";
+import type { AtlasUser } from "./auth";
 
 export type Decision = "approve" | "kill" | "edit" | "revive";
 export type Verdict = "keep" | "kill" | "blemish";
@@ -35,6 +36,46 @@ export async function listFindings(filters: AtlasFilters = {}) {
 
   if (error) throw error;
   return filterRows(data ?? [], filters).slice(0, 50);
+}
+
+export async function listPinnedFindings(operatorEmail: string, filters: AtlasFilters = {}) {
+  const { data, error } = await atlasDb()
+    .from("findings")
+    .select("*")
+    .eq("pinned", true)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    if (error.code === "42703" || error.message.includes("pinned")) return [];
+    throw error;
+  }
+
+  const rows = filterRows(data ?? [], filters);
+  if (rows.length === 0) return [];
+
+  const ids = rows.map((row) => row.id).filter(Boolean);
+  const { data: reads, error: readsError } = await atlasDb()
+    .from("finding_reads")
+    .select("finding_id")
+    .eq("operator_email", operatorEmail)
+    .in("finding_id", ids);
+
+  if (readsError) {
+    if (readsError.code === "42P01") return rows;
+    throw readsError;
+  }
+
+  const readIds = new Set((reads ?? []).map((row) => row.finding_id));
+  return rows.filter((row) => !readIds.has(row.id));
+}
+
+export async function markFindingRead(findingId: string, operatorEmail: string) {
+  const { error } = await atlasDb()
+    .from("finding_reads")
+    .upsert({ finding_id: findingId, operator_email: operatorEmail }, { onConflict: "finding_id,operator_email" });
+
+  if (error) throw error;
 }
 
 export async function listPatterns(filters: AtlasFilters = {}) {
@@ -261,6 +302,7 @@ export async function getQueueStatusCounts(filters: AtlasFilters = {}) {
 export async function decideAction(
   actionId: string,
   decision: Decision,
+  operator: AtlasUser,
   reason?: string,
 ) {
   const status = decision === "approve" ? "approved" : decision === "kill" ? "killed" : "pending";
@@ -274,6 +316,9 @@ export async function decideAction(
       .single();
 
     if (actionFetchError) throw actionFetchError;
+    if (operator.role === "curator" && !(await curatorOwnsLastKill(actionId, operator.email))) {
+      throw new Error("Curators can only revive their own kills.");
+    }
 
     const payload = action.payload as Record<string, unknown>;
     const draftText = [payload.title, payload.hook, payload.body, payload.caption]
@@ -285,13 +330,21 @@ export async function decideAction(
     update.status = compliance.status === "passed" ? "pending" : "killed";
   }
 
-  const { error: decisionError } = await atlasDb().from("decisions").insert({
+  const decisionRow = {
     action_id: actionId,
     decision,
     reason: reason || null,
-  });
+    operator_email: operator.email,
+  };
 
-  if (decisionError) throw decisionError;
+  const { error: decisionError } = await atlasDb().from("decisions").insert(decisionRow);
+  if (isMissingOperatorEmailError(decisionError)) {
+    const { operator_email: _operatorEmail, ...fallbackDecisionRow } = decisionRow;
+    const { error: retryError } = await atlasDb().from("decisions").insert(fallbackDecisionRow);
+    if (retryError) throw retryError;
+  } else if (decisionError) {
+    throw decisionError;
+  }
 
   const { error: actionError } = await atlasDb()
     .from("actions")
@@ -312,6 +365,7 @@ export async function markActionPublished(actionId: string) {
 
 export async function logActionResult(
   actionId: string,
+  operator: AtlasUser,
   input: {
     metric: ResultMetric;
     value: number;
@@ -340,6 +394,7 @@ export async function logActionResult(
       checkpoint: input.checkpoint,
       note: input.note?.trim() || null,
     },
+    operator_email: operator.email,
   };
 
   const { error } = await atlasDb().from("results").insert(row);
@@ -349,8 +404,27 @@ export async function logActionResult(
     if (retryError) throw retryError;
     return;
   }
+  if (isMissingOperatorEmailError(error)) {
+    const { operator_email: _operatorEmail, ...fallbackRow } = row;
+    const { error: retryError } = await atlasDb().from("results").insert(fallbackRow);
+    if (retryError) throw retryError;
+    return;
+  }
 
   if (error) throw error;
+}
+
+async function curatorOwnsLastKill(actionId: string, email: string) {
+  const { data, error } = await atlasDb()
+    .from("decisions")
+    .select("operator_email, decision")
+    .eq("action_id", actionId)
+    .eq("decision", "kill")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+  return data?.[0]?.operator_email === email;
 }
 
 export async function listExperiments() {
@@ -487,4 +561,8 @@ function specimenViews(row: { observed_metrics?: { views?: unknown } | null }) {
 
 function isMissingResultsChannelError(error: { code?: string; message?: string } | null) {
   return error?.code === "42703" || Boolean(error?.message?.includes("channel"));
+}
+
+function isMissingOperatorEmailError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(error?.message?.includes("operator_email"));
 }

@@ -8,6 +8,9 @@
     "scout": "node dist/workers/scout.js",
     "scout:pulse": "node dist/workers/scout-pulse.js",
     "lens": "node dist/workers/lens.js",
+    "lens:weekly": "node dist/workers/lens.js --cadence weekly",
+    "lens:monthly": "node dist/workers/lens.js --cadence monthly",
+    "lens:quarterly": "node dist/workers/lens.js --cadence quarterly",
     "quill": "node dist/workers/quill.js",
     "video:dissect": "node dist/workers/video-dissect.js",
     "check": "tsc -p tsconfig.json --noEmit"

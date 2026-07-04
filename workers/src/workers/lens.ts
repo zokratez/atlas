@@ -44,6 +44,8 @@ type LensResponse = {
   patterns: PatternDraft[];
 };
 
+type Cadence = "weekly" | "monthly" | "quarterly";
+
 type PatternRow = {
   id: string;
   created_at: string;
@@ -465,6 +467,14 @@ async function markBustedFromResults() {
 export async function main() {
   const config = loadConfig();
   const lensConfig = jobConfig(config, "lens");
+  const cadence = cadenceFromArgs();
+  const governor = new ModelGovernor(lensConfig, createProvider(lensConfig));
+
+  if (cadence) {
+    await runCadence(cadence, governor);
+    return;
+  }
+
   const findings = await recentFindings();
 
   if (findings.length === 0) {
@@ -472,7 +482,6 @@ export async function main() {
     return;
   }
 
-  const governor = new ModelGovernor(lensConfig, createProvider(lensConfig));
   const response = await governor.complete("atlas-lens", {
     system:
       "You are Atlas Lens v2, the pattern-ledger pass over Atlas findings. Return only one JSON object.",
@@ -486,6 +495,103 @@ export async function main() {
   const changedPatterns = await upsertPatterns((parsed.patterns ?? []).slice(0, 12), findings);
   await insertLensFindings(summaries);
   console.log(`atlas-lens prepared ${summaries.length} summary findings and ${changedPatterns} pattern updates.`);
+}
+
+function cadenceFromArgs(): Cadence | null {
+  const index = process.argv.indexOf("--cadence");
+  const value = index >= 0 ? process.argv[index + 1] : null;
+  return value === "weekly" || value === "monthly" || value === "quarterly" ? value : null;
+}
+
+async function runCadence(cadence: Cadence, governor: ModelGovernor) {
+  if (cadence === "monthly") {
+    await markFadingPatterns();
+  }
+
+  const [patternsResult, decisionsResult, resultsResult, costsResult, findingsResult] = await Promise.all([
+    atlasDb().from("patterns").select("id, property, channel, name, status, support_count, updated_at").order("updated_at", { ascending: false }).limit(30),
+    atlasDb().from("decisions").select("id, decision, reason, operator_email, created_at").order("created_at", { ascending: false }).limit(60),
+    atlasDb().from("results").select("id, property, channel, metric, value, raw, created_at").order("created_at", { ascending: false }).limit(60),
+    atlasDb().from("costs").select("id, agent, provider, usd, created_at").order("created_at", { ascending: false }).limit(80),
+    atlasDb().from("findings").select("id, property, channel, claim, tags, created_at").order("created_at", { ascending: false }).limit(80),
+  ]);
+
+  if (patternsResult.error && !isMissingPatternsError(patternsResult.error)) throw patternsResult.error;
+  if (decisionsResult.error) throw decisionsResult.error;
+  if (resultsResult.error) throw resultsResult.error;
+  if (costsResult.error) throw costsResult.error;
+  if (findingsResult.error) throw findingsResult.error;
+
+  const receiptIds = {
+    pattern_ids: (patternsResult.data ?? []).slice(0, 8).map((row) => row.id),
+    decision_ids: (decisionsResult.data ?? []).slice(0, 8).map((row) => row.id),
+    result_ids: (resultsResult.data ?? []).slice(0, 8).map((row) => row.id),
+    cost_ids: (costsResult.data ?? []).slice(0, 8).map((row) => row.id),
+    finding_ids: (findingsResult.data ?? []).slice(0, 8).map((row) => row.id),
+  };
+
+  const prompt = cadencePrompt(cadence, {
+    patterns: patternsResult.data ?? [],
+    decisions: decisionsResult.data ?? [],
+    results: resultsResult.data ?? [],
+    costs: costsResult.data ?? [],
+    findings: findingsResult.data ?? [],
+    receiptIds,
+  });
+
+  const response = await governor.complete(`atlas-lens-${cadence}`, {
+    system: "You are Atlas Rhythm. Write one concise pinned finding. Suggest only; never apply changes.",
+    maxTokens: 900,
+    temperature: 0.2,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const { error } = await atlasDb().from("findings").insert({
+    agent: `atlas-lens-${cadence}`,
+    property: "general",
+    channel: "general",
+    claim: cadenceTitle(cadence),
+    evidence: `${response.text.trim()}\n\nReceipts: ${JSON.stringify(receiptIds)}`,
+    source_url: null,
+    confidence: 0.8,
+    tags: ["lens", cadence, "cadence"],
+    pinned: true,
+    cadence,
+  });
+
+  if (isMissingPinnedError(error)) {
+    const { error: retryError } = await atlasDb().from("findings").insert({
+      agent: `atlas-lens-${cadence}`,
+      property: "general",
+      channel: "general",
+      claim: cadenceTitle(cadence),
+      evidence: `${response.text.trim()}\n\nReceipts: ${JSON.stringify(receiptIds)}`,
+      source_url: null,
+      confidence: 0.8,
+      tags: ["lens", cadence, "cadence"],
+    });
+    if (retryError) throw retryError;
+  } else if (error) {
+    throw error;
+  }
+
+  console.log(`atlas-lens ${cadence} cadence finding written with receipts.`);
+}
+
+function cadencePrompt(cadence: Cadence, context: Record<string, unknown>) {
+  if (cadence === "quarterly") {
+    return `Write a skeleton reminder finding: "quarterly review due: strategy doc vs results." Include why the human ritual matters, in one paragraph. Context: ${JSON.stringify(context, null, 2)}`;
+  }
+  if (cadence === "monthly") {
+    return `Write the monthly Atlas rhythm finding. Cover pattern lifecycle audit, experiment verdicts due, config-target suggestions based on kept content. Suggest only, never self-apply. Context: ${JSON.stringify(context, null, 2)}`;
+  }
+  return `Write "The Week" as one pinned Atlas finding: patterns risen/fallen, best/worst published post by logged results, kill-reason trends, cost summary, and exactly ONE suggested tweak. Suggest only, never self-apply. Context: ${JSON.stringify(context, null, 2)}`;
+}
+
+function cadenceTitle(cadence: Cadence) {
+  if (cadence === "weekly") return "The Week";
+  if (cadence === "monthly") return "Monthly rhythm audit";
+  return "Quarterly review due: strategy doc vs results";
 }
 
 async function parseLensResponse(text: string, governor: ModelGovernor) {
@@ -551,6 +657,10 @@ function isMissingSpecimensError(error: { code?: string; message?: string } | nu
 
 function isMissingAssetsError(error: { code?: string; message?: string } | null) {
   return error?.code === "42P01" || Boolean(error?.message?.includes("assets"));
+}
+
+function isMissingPinnedError(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || Boolean(error?.message?.includes("pinned") || error?.message?.includes("cadence"));
 }
 
 function compactNumber(value: number) {

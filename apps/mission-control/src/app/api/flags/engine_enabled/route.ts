@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/atlas/auth";
+import { requireApiRole, requireApiUser } from "@/lib/atlas/auth";
 import { getEngineEnabled, setEngineEnabled } from "@/lib/atlas/data";
 
 export async function GET() {
-  const user = await requireApiUser();
+  const user = await requireApiRole("owner");
   if (user instanceof NextResponse) return user;
 
   const flag = await getEngineEnabled();

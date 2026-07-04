@@ -12,28 +12,34 @@ import {
   PackageOpen,
   Power,
   Rss,
+  Settings,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-type NavKey = "feed" | "drop" | "armory" | "queue" | "experiments" | "trends" | "costs";
+type OperatorRole = "owner" | "curator" | "viewer";
+type NavKey = "feed" | "calendar" | "drop" | "armory" | "queue" | "experiments" | "trends" | "costs" | "settings";
 
-const navItems: Array<{ key: NavKey; href: string; label: string; Icon: typeof Rss }> = [
-  { key: "feed", href: "/feed", label: "Feed", Icon: Rss },
-  { key: "drop", href: "/drop", label: "Drop", Icon: Inbox },
-  { key: "armory", href: "/armory", label: "Armory", Icon: PackageOpen },
-  { key: "queue", href: "/queue", label: "Queue", Icon: ListChecks },
-  { key: "experiments", href: "/experiments", label: "Tests", Icon: ChartNoAxesCombined },
-  { key: "trends", href: "/trends", label: "Trends", Icon: ChartLine },
-  { key: "costs", href: "/costs", label: "Costs", Icon: CircleDollarSign },
+const navItems: Array<{ key: NavKey; href: string; label: string; Icon: typeof Rss; minRole: OperatorRole }> = [
+  { key: "feed", href: "/feed", label: "Feed", Icon: Rss, minRole: "viewer" },
+  { key: "calendar", href: "/calendar", label: "Calendar", Icon: ChartLine, minRole: "viewer" },
+  { key: "drop", href: "/drop", label: "Drop", Icon: Inbox, minRole: "curator" },
+  { key: "armory", href: "/armory", label: "Armory", Icon: PackageOpen, minRole: "curator" },
+  { key: "queue", href: "/queue", label: "Queue", Icon: ListChecks, minRole: "curator" },
+  { key: "experiments", href: "/experiments", label: "Tests", Icon: ChartNoAxesCombined, minRole: "curator" },
+  { key: "trends", href: "/trends", label: "Trends", Icon: ChartLine, minRole: "viewer" },
+  { key: "costs", href: "/costs", label: "Costs", Icon: CircleDollarSign, minRole: "curator" },
+  { key: "settings", href: "/settings", label: "Settings", Icon: Settings, minRole: "owner" },
 ];
 
 export function AppShell({
   active,
   userEmail,
+  userRole,
   children,
 }: {
   active: NavKey;
   userEmail: string;
+  userRole: OperatorRole;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -83,19 +89,21 @@ export function AppShell({
           <h1>Mission Control</h1>
         </div>
         <div className="topbar-actions">
-          <button
-            className={`kill-switch ${enabled ? "on" : "off"}`}
-            type="button"
-            onClick={toggleEngine}
-            disabled={loadingFlag}
-            aria-pressed={enabled}
-          >
-            <Power size={16} />
-            <span className="kill-switch-copy">
-              <span>{enabled ? "Engine on" : "Engine off"}</span>
-              <span>Off = no agent runs or spends.</span>
-            </span>
-          </button>
+          {userRole === "owner" ? (
+            <button
+              className={`kill-switch ${enabled ? "on" : "off"}`}
+              type="button"
+              onClick={toggleEngine}
+              disabled={loadingFlag}
+              aria-pressed={enabled}
+            >
+              <Power size={16} />
+              <span className="kill-switch-copy">
+                <span>{enabled ? "Engine on" : "Engine off"}</span>
+                <span>Off = no agent runs or spends.</span>
+              </span>
+            </button>
+          ) : null}
           <button className="ghost-button" type="button" onClick={signOut} aria-label={`Sign out ${userEmail}`}>
             Sign out
           </button>
@@ -103,7 +111,7 @@ export function AppShell({
       </header>
 
       <nav className="nav-tabs" aria-label="Mission Control sections">
-        {navItems.map(({ key, href, label, Icon }) => (
+        {navItems.filter((item) => canSee(userRole, item.minRole)).map(({ key, href, label, Icon }) => (
           <Link className={active === key ? "active" : ""} href={href} key={key}>
             <Icon size={16} />
             <span>{label}</span>
@@ -118,7 +126,13 @@ export function AppShell({
           <Activity size={14} /> atlas schema
         </span>
         <span>service-role routes only</span>
+        <span>{userRole}</span>
       </footer>
     </div>
   );
+}
+
+function canSee(role: OperatorRole, minimum: OperatorRole) {
+  const rank: Record<OperatorRole, number> = { viewer: 1, curator: 2, owner: 3 };
+  return rank[role] >= rank[minimum];
 }
