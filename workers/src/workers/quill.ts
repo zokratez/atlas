@@ -55,10 +55,17 @@ type TasteDecision = {
   weight: number;
 };
 
+type GateFailureNote = {
+  title: string | null;
+  hook: string | null;
+  body: string | null;
+  compliance_notes: string | null;
+};
+
 const quillSoulPath = "/Users/samoteo/.openclaw/agents/quill/SOUL.md";
 function voiceForProperty(property: string) {
   if (property === "store") {
-    return "pain, truth, funny, real. Quiet proof. RUO only. Zero hype. No health, human-use, dosing, cosmetic, customer-results, or paid-ad targeting claims.";
+    return "pain, truth, funny, real. Quiet proof. RUO only. Research-use framing is mandatory. Claims stay limited to purity, testing, logistics, education, and COA status. COA refs must be real Janoshik links or pendiente. No health, human-use, dosing, cosmetic, customer-results, or paid-ad targeting claims.";
   }
 
   if (property === "huh") {
@@ -70,12 +77,22 @@ function voiceForProperty(property: string) {
 
 function buildSystemPrompt(property: string) {
   const quillSoul = fs.readFileSync(quillSoulPath, "utf8");
+  const storeRules = property === "store" ? `
+Store RUO drafting doctrine:
+- Every store draft must explicitly frame the topic as research-use-only / RUO / not for human use.
+- Allowed claims only: purity, testing, lot verification, logistics, education, COA status.
+- COA references must be either a real Janoshik URL or the literal word "pendiente".
+- Prefer concrete trust mechanics: lot lookup, visible COA workflow, storage/shipping clarity, compound education, email capture for docs.
+- Never mention taking, injecting, dosing, cycles, stacks, symptoms, treatment, results, transformations, before/after, skin/hair/body outcomes, or paid-ad targeting.
+- Store channels only: seo, email, x. Store kinds only: page for SEO article outlines, email for email-capture copy, post for educational X posts.
+` : "";
   return `${quillSoul}
 
 Atlas Quill doctrine:
 - Publishing is 100% manual. You draft only.
 - Voice: ${voiceForProperty(property)}
 - Drafts must feel written from source evidence, not from content templates.
+${storeRules}
 - Return JSON arrays only.`;
 }
 
@@ -84,8 +101,21 @@ function buildUserPrompt(
   findings: FindingRow[],
   patterns: PatternRow[],
   tasteDecisions: TasteDecision[],
+  gateFailureNotes: GateFailureNote[],
   maxDrafts: number,
 ) {
+  const storeRules = property === "store" ? `
+Store-specific output menu:
+- Draft up to ${maxDrafts} total.
+- Aim for at least 4 gate-passable store drafts when enough source material exists.
+- Use only these channel/kind pairs:
+  - seo + page: SEO article outline around compound education, COA/purity/testing, or lot verification.
+  - email + email: email-capture copy offering RUO documentation, COA updates, or education.
+  - x + post: educational X post about research-vendor trust mechanics.
+- Include RUO / research-use-only / not for human use in each draft body.
+- If you mention COA, include a real Janoshik URL from source evidence or write "COA: pendiente".
+- Treat the gate-failure notes below as negative examples to avoid.
+` : "";
   return `Draft content from these fresh Atlas findings.
 
 Rules:
@@ -99,10 +129,14 @@ Rules:
 - Store drafts must obey RUO-only framing.
 - Huh drafts must not overpromise fluency or outcomes.
 - Zero hype. Pain, truth, funny, real.
+${storeRules}
 
 Property: ${property}
 Sam taste memory:
 ${JSON.stringify(tasteDecisions, null, 2)}
+
+Recent store gate failures to avoid:
+${JSON.stringify(gateFailureNotes, null, 2)}
 
 Pattern ledger:
 ${JSON.stringify(patterns, null, 2)}
@@ -218,6 +252,40 @@ async function recentTasteDecisions(property: string) {
   return weighted.slice(0, 20);
 }
 
+async function recentGateFailureNotes(property: string) {
+  if (property !== "store") return [];
+
+  const { data, error } = await atlasDb()
+    .from("actions")
+    .select("payload, compliance_notes")
+    .eq("agent", "atlas-quill")
+    .eq("property", "store")
+    .eq("compliance_status", "failed")
+    .order("created_at", { ascending: false })
+    .limit(8);
+
+  if (error) throw error;
+  return (data ?? []).map((row) => {
+    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    return {
+      title: stringOrNull(payload.title),
+      hook: stringOrNull(payload.hook),
+      body: stringOrNull(payload.body),
+      compliance_notes: row.compliance_notes ?? null,
+    };
+  });
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.slice(0, 320) : null;
+}
+
+function dailyDraftQuota(property: string) {
+  if (property === "store") return 5;
+  if (property === "huh") return 2;
+  return 0;
+}
+
 function patternScore(draft: Draft, patterns: PatternRow[]) {
   const text = `${draft.title} ${draft.hook} ${draft.body}`.toLowerCase();
   const explicitNames = new Set((draft.pattern_names ?? []).map((name) => name.toLowerCase()));
@@ -300,14 +368,17 @@ export async function main() {
   let inserted = 0;
 
   for (const property of config.properties) {
+    const quota = dailyDraftQuota(property);
+    if (quota === 0) continue;
     const usedToday = await todaysActionCount(property);
-    const remaining = Math.max(0, 5 - usedToday);
+    const remaining = Math.max(0, quota - usedToday);
     if (remaining === 0) continue;
 
     const findings = await recentFindings(property);
     if (findings.length === 0) continue;
     const patterns = await recentPatterns(property);
     const tasteDecisions = await recentTasteDecisions(property);
+    const gateFailureNotes = await recentGateFailureNotes(property);
     const mix = tasteDecisions.reduce((counts, decision) => {
       counts[decision.role] = (counts[decision.role] ?? 0) + 1;
       return counts;
@@ -318,7 +389,10 @@ export async function main() {
       system: buildSystemPrompt(property),
       maxTokens: 4000,
       temperature: 0.4,
-      messages: [{ role: "user", content: buildUserPrompt(property, findings, patterns, tasteDecisions, remaining) }],
+      messages: [{
+        role: "user",
+        content: buildUserPrompt(property, findings, patterns, tasteDecisions, gateFailureNotes, remaining),
+      }],
     });
 
     const drafts = parseJsonArray<Draft>(response.text)

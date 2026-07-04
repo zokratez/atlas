@@ -164,7 +164,7 @@ a {
 
 .nav-tabs {
   display: grid;
-  grid-template-columns: repeat(9, minmax(0, 1fr));
+  grid-template-columns: repeat(10, minmax(0, 1fr));
   gap: 6px;
   padding: 12px 0;
   position: sticky;
@@ -172,6 +172,10 @@ a {
   z-index: 5;
   background: rgba(7, 8, 6, 0.92);
   backdrop-filter: blur(14px);
+}
+
+.nav-tabs .mobile-only {
+  display: none;
 }
 
 .nav-tabs a {
@@ -270,6 +274,74 @@ a {
   min-height: 34px;
   border-color: rgba(239, 200, 106, 0.42);
   background: rgba(239, 200, 106, 0.1);
+}
+
+.today-view {
+  gap: 12px;
+}
+
+.focus-strip,
+.focus-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.focus-strip select,
+.focus-settings select {
+  min-height: 40px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090b08;
+  color: var(--text);
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.focus-chip {
+  width: fit-content;
+  border-color: rgba(94, 215, 198, 0.42);
+  color: var(--teal);
+}
+
+.today-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.today-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 64px;
+}
+
+.today-card p {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.today-card.complete {
+  grid-template-columns: 1fr;
+  border-style: dashed;
+}
+
+.today-card.complete p {
+  color: var(--muted);
+}
+
+.more-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.more-link {
+  min-height: 58px;
+  align-items: center;
+  color: var(--text);
+  font-weight: 700;
 }
 
 .pinned-card {
@@ -1085,7 +1157,21 @@ a {
   }
 
   .nav-tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .nav-tabs a:not(.mobile-primary):not(.mobile-only) {
+    display: none;
+  }
+
+  .nav-tabs .mobile-only {
+    display: flex;
+  }
+
+  .today-card,
+  .focus-strip,
+  .focus-settings {
+    grid-template-columns: 1fr;
   }
 
   .receipt-heading,

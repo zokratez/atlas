@@ -37,6 +37,7 @@ type RenditionDraft = {
 };
 
 const defaultChannels = ["instagram", "tiktok", "x"];
+const storeChannels = ["seo", "email", "x"];
 
 function producerPrompt(action: ActionRow, patterns: PatternRow[]) {
   const channels = intendedChannels(action);
@@ -56,12 +57,13 @@ Channel formats:
 - tiktok: short script with hook in first 2 seconds.
 - instagram: caption with hook, body, and simple CTA.
 - x: short post or thread draft.
-- seo: section block with H2 and body.
-- email: email block with subject and body.
+- seo: SEO article outline or section block with H2s and body.
+- email: email-capture block with subject and body.
 
 Rules:
 - Shape each rendition by validated/emerging patterns for that channel.
-- Store property must stay RUO only.
+- Store property must stay RUO only and may produce only: seo_article, email_block, x_post. Use channels seo, email, x only. No Instagram or TikTok for store.
+- Store COA refs must be real Janoshik links or "pendiente"; claims stay limited to purity/testing/logistics/education.
 - Huh property must focus on Spanish conversation freeze, not fluency promises.
 - No API posting. Text only.
 
@@ -132,6 +134,9 @@ export async function main() {
         compliance_status: action.property === "store" ? compliance.status : "passed",
         compliance_notes: action.property === "store" ? compliance.notes : null,
       };
+    }).filter((rendition) => {
+      if (action.property !== "store") return true;
+      return storeChannels.includes(rendition.channel);
     });
 
     const passed = renditions.filter((rendition) => rendition.compliance_status !== "failed");
@@ -159,6 +164,8 @@ export async function main() {
 }
 
 function intendedChannels(action: ActionRow) {
+  if (action.property === "store") return storeChannels;
+
   const payloadChannels = action.payload?.intended_channels;
   if (Array.isArray(payloadChannels)) {
     const channels = payloadChannels.map((channel) => normalizeChannel(String(channel))).filter((channel) => channel !== "general");

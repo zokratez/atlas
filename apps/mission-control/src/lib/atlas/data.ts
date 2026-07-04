@@ -25,10 +25,10 @@ export type AtlasFilters = {
 };
 
 const fallbackProperties = [
-  { slug: "store", display_name: "PACO Peptide", color: "#7dd3fc", active: true },
-  { slug: "huh", display_name: "Huh? Learn Spanish", color: "#fda4af", active: true },
-  { slug: "restaurant", display_name: "Motel West / PACO", color: "#facc15", active: true },
-  { slug: "general", display_name: "General", color: "#a3a3a3", active: true },
+  { slug: "store", display_name: "PACO Peptide", color: "#C7B9A6", active: true },
+  { slug: "huh", display_name: "Huh? Learn Spanish", color: "#4ade80", active: true },
+  { slug: "restaurant", display_name: "Motel West / PACO", color: "#f59e0b", active: true },
+  { slug: "general", display_name: "General", color: "#94a3b8", active: true },
 ];
 const properties: AtlasPropertyFilter[] = ["all", ...fallbackProperties.map((property) => property.slug)];
 const channels: AtlasChannelFilter[] = ["all", "seo", "email", "tiktok", "instagram", "youtube", "x", "community"];
@@ -164,6 +164,111 @@ export async function listProperties({ includeInactive = false } = {}) {
 
   const rows = data ?? [];
   return includeInactive ? rows : rows.filter((property) => property.active !== false);
+}
+
+export async function getFocusProperty() {
+  const { data, error } = await atlasDb()
+    .from("flags")
+    .select("value")
+    .eq("key", "focus_property")
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return "store";
+    throw error;
+  }
+
+  return normalizeProperty(typeof data.value === "string" ? data.value : "store");
+}
+
+export async function setFocusProperty(property: string) {
+  const focusProperty = normalizeProperty(property);
+  const { data, error } = await atlasDb()
+    .from("flags")
+    .upsert({
+      key: "focus_property",
+      value: focusProperty,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "key" })
+    .select("value, updated_at")
+    .single();
+
+  if (error) throw error;
+  return {
+    focusProperty: normalizeProperty(typeof data.value === "string" ? data.value : focusProperty),
+    updated_at: data.updated_at,
+  };
+}
+
+export async function getTodaySummary(operatorEmail: string, focusProperty = "store") {
+  const property = normalizeProperty(focusProperty);
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const [pendingResult, pinnedResult, intakeResult] = await Promise.all([
+    atlasDb()
+      .from("actions")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending")
+      .eq("property", property),
+    atlasDb()
+      .from("findings")
+      .select("id, property, claim, tags, cadence, created_at")
+      .eq("pinned", true)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    atlasDb()
+      .from("intake")
+      .select("id, property, status, processed_at, finding_ids")
+      .eq("status", "processed")
+      .gte("processed_at", since)
+      .limit(100),
+  ]);
+
+  if (pendingResult.error) throw pendingResult.error;
+  if (pinnedResult.error) {
+    if (!isMissingPinnedColumnError(pinnedResult.error)) throw pinnedResult.error;
+  }
+  if (intakeResult.error) throw intakeResult.error;
+
+  const pinnedRows = ((pinnedResult.data ?? []) as Array<{
+    id: string;
+    property?: string | null;
+    tags?: string[] | null;
+    cadence?: string | null;
+  }>).filter((row) => row.property === property || row.property === "general");
+  const pinnedIds = pinnedRows.map((row) => row.id);
+  const readIds = pinnedIds.length > 0 ? await readFindingIds(operatorEmail, pinnedIds) : new Set<string>();
+  const unreadPinned = pinnedRows.filter((row) => !readIds.has(row.id));
+  const weekReady = unreadPinned.some((row) => row.cadence === "weekly" || row.tags?.includes("weekly"));
+  const checkpointCount = unreadPinned.filter((row) => row.tags?.includes("checkpoint")).length;
+  const processedDrops = ((intakeResult.data ?? []) as Array<{
+    property?: string | null;
+    finding_ids?: string[] | null;
+  }>).filter((row) => !row.property || row.property === property);
+
+  return {
+    focusProperty: property,
+    pendingDrafts: pendingResult.count ?? 0,
+    checkpointPosts: checkpointCount,
+    weekReady,
+    processedDrops: processedDrops.length,
+    processedFindings: processedDrops.reduce((sum, row) => sum + (Array.isArray(row.finding_ids) ? row.finding_ids.length : 0), 0),
+  };
+}
+
+async function readFindingIds(operatorEmail: string, findingIds: string[]) {
+  const { data, error } = await atlasDb()
+    .from("finding_reads")
+    .select("finding_id")
+    .eq("operator_email", operatorEmail)
+    .in("finding_id", findingIds);
+
+  if (error) {
+    if (error.code === "42P01") return new Set<string>();
+    throw error;
+  }
+
+  return new Set((data ?? []).map((row) => row.finding_id as string));
 }
 
 export async function upsertProperty(input: {

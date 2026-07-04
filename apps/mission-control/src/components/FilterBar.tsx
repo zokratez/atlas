@@ -31,10 +31,10 @@ export type PropertyOption = {
 };
 
 const fallbackPropertyItems: PropertyOption[] = [
-  { slug: "store", display_name: "PACO Peptide", color: "#7dd3fc", active: true },
-  { slug: "huh", display_name: "Huh? Learn Spanish", color: "#fda4af", active: true },
-  { slug: "restaurant", display_name: "Motel West / PACO", color: "#facc15", active: true },
-  { slug: "general", display_name: "General", color: "#a3a3a3", active: true },
+  { slug: "store", display_name: "PACO Peptide", color: "#C7B9A6", active: true },
+  { slug: "huh", display_name: "Huh? Learn Spanish", color: "#4ade80", active: true },
+  { slug: "restaurant", display_name: "Motel West / PACO", color: "#f59e0b", active: true },
+  { slug: "general", display_name: "General", color: "#94a3b8", active: true },
 ];
 
 const propertyItems: Array<{ key: AtlasPropertyFilter; label: string; color?: string | null }> = [
@@ -58,7 +58,9 @@ const channelItems: Array<{ key: AtlasChannelFilter; label: string }> = [
 ];
 
 const storageKey = "atlas-filters-v1";
-const defaultFilters: AtlasFilters = { property: "all", channel: "all" };
+const focusStorageKey = "atlas-focus-property-v1";
+const defaultFocusProperty = "store";
+const defaultFilters: AtlasFilters = { property: defaultFocusProperty, channel: "all" };
 
 export function useAtlasFilters() {
   const [filters, setFilters] = useState<AtlasFilters>(defaultFilters);
@@ -66,8 +68,34 @@ export function useAtlasFilters() {
 
   useEffect(() => {
     try {
+      const params = new URLSearchParams(window.location.search);
+      const urlProperty = params.get("property");
+      const urlChannel = params.get("channel");
       const stored = window.localStorage.getItem(storageKey);
-      if (stored) setFilters(normalizeFilters(JSON.parse(stored) as Partial<AtlasFilters>));
+      const localFocus = window.localStorage.getItem(focusStorageKey) || defaultFocusProperty;
+      if (urlProperty || urlChannel) {
+        const next = normalizeFilters({
+          property: urlProperty || localFocus,
+          channel: (urlChannel || undefined) as AtlasChannelFilter | undefined,
+        });
+        setFilters(next);
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
+      } else if (stored) {
+        setFilters(normalizeFilters(JSON.parse(stored) as Partial<AtlasFilters>));
+      } else {
+        setFilters({ property: localFocus, channel: "all" });
+      }
+      fetch("/api/focus")
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error("focus unavailable")))
+        .then((payload) => {
+          if (typeof payload.focusProperty === "string") {
+            window.localStorage.setItem(focusStorageKey, payload.focusProperty);
+            if (!stored && !urlProperty && !urlChannel) {
+              setFilters({ property: payload.focusProperty, channel: "all" });
+            }
+          }
+        })
+        .catch(() => undefined);
     } finally {
       setReady(true);
     }
@@ -79,6 +107,37 @@ export function useAtlasFilters() {
   }
 
   return { filters, setFilters: updateFilters, ready };
+}
+
+export function useFocusProperty() {
+  const [focusProperty, setFocusPropertyState] = useState(defaultFocusProperty);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const localFocus = window.localStorage.getItem(focusStorageKey) || defaultFocusProperty;
+    setFocusPropertyState(localFocus);
+    fetch("/api/focus")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("focus unavailable")))
+      .then((payload) => {
+        if (typeof payload.focusProperty === "string") {
+          window.localStorage.setItem(focusStorageKey, payload.focusProperty);
+          setFocusPropertyState(payload.focusProperty);
+        }
+      })
+      .finally(() => setReady(true));
+  }, []);
+
+  async function setFocusProperty(next: string) {
+    setFocusPropertyState(next);
+    window.localStorage.setItem(focusStorageKey, next);
+    await fetch("/api/focus", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ focusProperty: next }),
+    });
+  }
+
+  return { focusProperty, setFocusProperty, ready };
 }
 
 export function useProperties(includeInactive = false) {

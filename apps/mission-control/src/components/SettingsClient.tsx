@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useFocusProperty } from "./FilterBar";
 
 type Operator = {
   email: string;
@@ -18,6 +19,7 @@ type Property = {
 };
 
 export function SettingsClient() {
+  const { focusProperty, setFocusProperty } = useFocusProperty();
   const [operators, setOperators] = useState<Operator[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [email, setEmail] = useState("");
@@ -149,6 +151,18 @@ export function SettingsClient() {
           <h2>Businesses</h2>
         </div>
         <span className="counter">{loading ? "--" : properties.length}</span>
+      </div>
+
+      <div className="panel focus-settings">
+        <div>
+          <p className="eyebrow">Focus mode</p>
+          <h3>Default property</h3>
+        </div>
+        <select value={focusProperty} onChange={(event) => setFocusProperty(event.target.value)}>
+          {properties.filter((property) => property.active).map((property) => (
+            <option value={property.slug} key={property.slug}>{property.display_name}</option>
+          ))}
+        </select>
       </div>
 
       <form className="drop-form panel" onSubmit={addProperty}>

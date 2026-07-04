@@ -7,8 +7,10 @@ import {
   ChartLine,
   ChartNoAxesCombined,
   CircleDollarSign,
+  Home,
   Inbox,
   ListChecks,
+  MoreHorizontal,
   PackageOpen,
   Power,
   Rss,
@@ -17,18 +19,20 @@ import {
 import { useEffect, useState } from "react";
 
 type OperatorRole = "owner" | "curator" | "viewer";
-type NavKey = "feed" | "calendar" | "drop" | "armory" | "queue" | "experiments" | "trends" | "costs" | "settings";
+export type NavKey = "today" | "feed" | "queue" | "drop" | "armory" | "calendar" | "experiments" | "trends" | "costs" | "settings" | "more";
 
-const navItems: Array<{ key: NavKey; href: string; label: string; Icon: typeof Rss; minRole: OperatorRole }> = [
+const navItems: Array<{ key: NavKey; href: string; label: string; Icon: typeof Rss; minRole: OperatorRole; mobilePrimary?: boolean; desktopOnly?: boolean; mobileOnly?: boolean }> = [
+  { key: "today", href: "/today", label: "Today", Icon: Home, minRole: "viewer", mobilePrimary: true },
   { key: "feed", href: "/feed", label: "Feed", Icon: Rss, minRole: "viewer" },
-  { key: "calendar", href: "/calendar", label: "Calendar", Icon: ChartLine, minRole: "viewer" },
+  { key: "queue", href: "/queue", label: "Queue", Icon: ListChecks, minRole: "curator", mobilePrimary: true },
   { key: "drop", href: "/drop", label: "Drop", Icon: Inbox, minRole: "curator" },
   { key: "armory", href: "/armory", label: "Armory", Icon: PackageOpen, minRole: "curator" },
-  { key: "queue", href: "/queue", label: "Queue", Icon: ListChecks, minRole: "curator" },
+  { key: "calendar", href: "/calendar", label: "Calendar", Icon: ChartLine, minRole: "viewer" },
   { key: "experiments", href: "/experiments", label: "Tests", Icon: ChartNoAxesCombined, minRole: "curator" },
   { key: "trends", href: "/trends", label: "Trends", Icon: ChartLine, minRole: "viewer" },
   { key: "costs", href: "/costs", label: "Costs", Icon: CircleDollarSign, minRole: "curator" },
   { key: "settings", href: "/settings", label: "Settings", Icon: Settings, minRole: "owner" },
+  { key: "more", href: "/more", label: "More", Icon: MoreHorizontal, minRole: "viewer", mobileOnly: true },
 ];
 
 export function AppShell({
@@ -111,8 +115,17 @@ export function AppShell({
       </header>
 
       <nav className="nav-tabs" aria-label="Mission Control sections">
-        {navItems.filter((item) => canSee(userRole, item.minRole)).map(({ key, href, label, Icon }) => (
-          <Link className={active === key ? "active" : ""} href={href} key={key}>
+        {navItems.filter((item) => canSee(userRole, item.minRole)).map(({ key, href, label, Icon, mobilePrimary, desktopOnly, mobileOnly }) => (
+          <Link
+            className={[
+              active === key || (key === "more" && isMoreActive(active)) ? "active" : "",
+              mobilePrimary || ["feed", "drop"].includes(key) ? "mobile-primary" : "",
+              desktopOnly ? "desktop-only" : "",
+              mobileOnly ? "mobile-only" : "",
+            ].filter(Boolean).join(" ")}
+            href={href}
+            key={key}
+          >
             <Icon size={16} />
             <span>{label}</span>
           </Link>
@@ -135,4 +148,8 @@ export function AppShell({
 function canSee(role: OperatorRole, minimum: OperatorRole) {
   const rank: Record<OperatorRole, number> = { viewer: 1, curator: 2, owner: 3 };
   return rank[role] >= rank[minimum];
+}
+
+function isMoreActive(active: NavKey) {
+  return !["today", "feed", "queue", "drop", "more"].includes(active);
 }

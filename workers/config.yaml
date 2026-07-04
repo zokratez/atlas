@@ -38,22 +38,30 @@ properties:
   - paco
   - general
 research_targets:
-  - name: research-adjacent DTC and trust-based wellness marketing
+  - name: RUO vendor SEO winners and COA trust mechanics
     property: store
-    tags: [store, research-adjacent, dtc, wellness, trust-layer]
+    tags: [store, ruo, peptide, seo, coa, purity, trust-layer]
     urls:
       - https://www.peptidesciences.com/
       - https://www.limitlesslifenootropics.com/
       - https://swisschems.is/
+    questions:
+      - What ranks or appears positioned for compound-name plus COA, purity, testing, verified, and certificate-of-analysis queries?
+      - How do RUO vendors present COA transparency, lot verification, purity proof, and educational content without human-use claims?
+      - What page structures, trust badges, internal links, disclaimers, and capture offers are stealable for a compliant research-use storefront?
+  - name: restricted-store email capture and proof conversion
+    property: store
+    tags: [store, email, capture, restricted-commerce, trust-layer, logistics]
+    urls:
       - https://marekhealth.com/
       - https://www.functionhealth.com/
       - https://www.levels.com/
       - https://www.livemomentous.com/
       - https://www.thorne.com/
     questions:
-      - How do research-peptide/RUO vendors handle COA transparency, lot verification, and educational content? Study marketing mechanics only.
-      - How do high-trust DTC wellness brands convert skeptics via proof, testing, and verification instead of claims?
-      - What SEO and email-capture mechanics appear around compound-name plus COA, purity, and verified queries in regulated niches?
+      - How do trust-heavy DTC wellness brands convert skeptics through proof, testing, and logistics instead of claims?
+      - What email-capture mechanics work in restricted or high-trust stores: lab updates, buyer guides, COA alerts, education series, waitlists?
+      - Which wording makes documentation and verification feel valuable without implying medical, cosmetic, or human-use outcomes?
   - name: TikTok-native language-app growth
     property: huh
     tags: [huh, language-learning, tiktok, spanish, organic-growth]
@@ -68,14 +76,25 @@ research_targets:
       - What hook structures, posting cadence, UGC formats, and faceless account patterns are used by Duolingo, Speak, Praktika, and Jumpspeak on TikTok?
       - What can Atlas learn from Duolingo's unhinged-mascot organic playbook without copying the mascot premise?
       - What Spanish-learning hooks are engaging Latino-market and heritage-speaker audiences?
-  - name: live X pulse for peptides, language learning, and creator algorithms
-    property: general
-    tags: [pulse, x, live-discussion, peptide-community, language-learning, creator-algorithms]
+  - name: live X pulse for peptide community and restricted-store trust
+    property: store
+    tags: [pulse, x, live-discussion, peptide-community, forums, reddit, trust, ruo]
     urls:
       - https://x.com/search?q=peptide%20research
+      - https://x.com/search?q=peptide%20COA
+      - https://x.com/search?q=research%20peptides%20purity
+      - https://www.reddit.com/search/?q=research%20peptides%20COA
+      - https://www.reddit.com/search/?q=peptide%20purity%20testing
+    questions:
+      - What vocabulary and objections are showing up in peptide research, COA, purity, lot verification, and vendor-trust discussions?
+      - What proof language earns trust in peptide/research communities without making health, dosing, or human-use claims?
+      - What recurring complaints about restricted-store buying, shipping, testing, and documentation should PACO Peptide answer?
+  - name: live X pulse for language learning and creator algorithms
+    property: general
+    tags: [pulse, x, live-discussion, language-learning, creator-algorithms]
+    urls:
       - https://x.com/search?q=language%20learning
       - https://x.com/search?q=algorithm%20creators
     questions:
-      - What real-time X vocabulary and sentiment are showing up in the peptide or research community?
       - What language-learning fails or wins are going viral this week?
       - What platform algorithm changes are creators complaining about right now?

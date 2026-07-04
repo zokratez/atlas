@@ -81,6 +81,11 @@ export function QueueClient() {
   useEffect(() => {
     const storedDensity = window.localStorage.getItem(densityKey);
     if (storedDensity === "compact" || storedDensity === "comfortable") setDensity(storedDensity);
+    const searchParams = new URLSearchParams(window.location.search);
+    const statusParam = searchParams.get("status");
+    if (statusParam === "pending" || statusParam === "approved" || statusParam === "killed" || statusParam === "published") {
+      setStatus(statusParam);
+    }
   }, []);
 
   function setStoredDensity(next: Density) {
